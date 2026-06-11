@@ -109,4 +109,11 @@ async function seed() {
   console.log(`✅ Seeded ${countries.length} countries into country_data table`);
 }
 
-seed().catch(console.error);
+seed()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

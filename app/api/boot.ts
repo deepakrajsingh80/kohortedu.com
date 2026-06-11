@@ -11,6 +11,35 @@ import { Paths } from "@contracts/constants";
 const app = new Hono<{ Bindings: HttpBindings }>();
 
 app.use(bodyLimit({ maxSize: 50 * 1024 * 1024 }));
+
+// Redirect direct browser paths to HashRouter paths (e.g. /admin -> /#/admin)
+app.use("*", async (c, next) => {
+  const url = new URL(c.req.url);
+  const path = url.pathname;
+
+  if (
+    path.startsWith("/api/") ||
+    path === "/api" ||
+    path === Paths.oauthCallback ||
+    path.includes(".")
+  ) {
+    await next();
+    return;
+  }
+
+  const accept = c.req.header("accept") ?? "";
+  if (!accept.includes("text/html")) {
+    await next();
+    return;
+  }
+
+  if (path !== "/" && !path.startsWith("/#")) {
+    return c.redirect(`/#${path}`);
+  }
+
+  await next();
+});
+
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({

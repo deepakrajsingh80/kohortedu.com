@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { motion } from "framer-motion";
+import { trpc } from "@/providers/trpc";
 import {
   Users, GraduationCap, FileText, TrendingUp, Clock,
   ArrowLeft, Mail, Phone, Trash2, RefreshCw, AlertTriangle,
@@ -98,69 +99,41 @@ function AdminGate() {
   );
 }
 
-/* ─── Load leads from all localStorage sources ─── */
-function loadLeads(): Lead[] {
-  // Try kc_leads first (admin-created storage)
-  try {
-    const raw = localStorage.getItem("kc_leads");
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+/* ─── Main Admin Component ─── */
+export default function Admin() {
+  const [tab, setTab] = useState<Tab>("overview");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
 
-  // Fall back to kc_user profiles stored from homepage form
-  const leads: Lead[] = [];
-  try {
-    const userRaw = localStorage.getItem("kc_user");
-    if (userRaw) {
-      const user = JSON.parse(userRaw);
-      if (user.name || user.email) {
-        leads.push({
-          id: 1,
-          fullName: user.name || "Unknown",
-          email: user.email || "—",
-          phone: user.phone || "—",
-          destination: user.destination || "—",
-          courseInterest: user.courseInterest || "—",
-          city: user.city || "—",
-          status: "new",
-          createdAt: user.createdAt || new Date().toISOString(),
-        });
-      }
-    }
-    const draftRaw = localStorage.getItem("kc_profile_draft");
-    if (draftRaw) {
-      const draft = JSON.parse(draftRaw);
-      leads.push({
-        id: leads.length + 1,
-        fullName: draft.name || draft.fullName || "Draft Profile",
-        email: draft.email || "—",
-        phone: draft.phone || "—",
-        destination: draft.destination || "—",
-        courseInterest: draft.course || draft.courseInterest || "—",
-        city: draft.city || "—",
-        status: "new",
-        createdAt: new Date().toISOString(),
-      });
-    }
-  } catch { /* ignore */ }
+  const utils = trpc.useUtils();
+  const { data: dbLeads = [], isLoading, refetch } = trpc.lead.list.useQuery();
 
-  return leads;
-}
+  const updateStatusMutation = trpc.lead.updateStatus.useMutation({
+    onSuccess: () => {
+      utils.lead.list.invalidate();
+    },
+  });
 
-function saveLeads(leads: Lead[]) {
-  localStorage.setItem("kc_leads", JSON.stringify(leads));
-}
+  const deleteMutation = trpc.lead.delete.useMutation({
+    onSuccess: () => {
+      utils.lead.list.invalidate();
+    },
+  });
 
-/* ─── Load student profiles ─── */
-function loadStudents(): StudentProfile[] {
-  try {
-    const raw = localStorage.getItem("kc_student_profiles");
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+  const leads: Lead[] = dbLeads.map((l) => ({
+    id: l.id,
+    fullName: l.fullName,
+    email: l.email,
+    phone: l.phone,
+    destination: l.destination,
+    courseInterest: l.courseInterest,
+    city: l.city,
+    status: l.status as LeadStatus,
+    createdAt: typeof l.createdAt === "string" ? l.createdAt : (l.createdAt instanceof Date ? l.createdAt.toISOString() : new Date(l.createdAt).toISOString()),
+  }));
 
-  // Derive from leads
-  const leads = loadLeads();
-  return leads.map((l, i) => ({
-    id: i + 1,
+  const students: StudentProfile[] = leads.map((l) => ({
+    id: l.id,
     fullName: l.fullName,
     email: l.email,
     phone: l.phone,
@@ -170,15 +143,6 @@ function loadStudents(): StudentProfile[] {
     budget: "—",
     createdAt: l.createdAt,
   }));
-}
-
-/* ─── Main Admin Component ─── */
-export default function Admin() {
-  const [tab, setTab] = useState<Tab>("overview");
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [students, setStudents] = useState<StudentProfile[]>([]);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
 
   const isAdmin = (() => {
     try {
@@ -191,27 +155,17 @@ export default function Admin() {
     return localStorage.getItem("kc_admin_override") === "1";
   })();
 
-  useEffect(() => {
-    setLeads(loadLeads());
-    setStudents(loadStudents());
-  }, []);
-
   function refreshData() {
-    setLeads(loadLeads());
-    setStudents(loadStudents());
+    refetch();
   }
 
   function updateLeadStatus(id: number, status: LeadStatus) {
-    const updated = leads.map(l => l.id === id ? { ...l, status } : l);
-    setLeads(updated);
-    saveLeads(updated);
+    updateStatusMutation.mutate({ id, status });
   }
 
   function deleteLead(id: number) {
     if (!confirm("Delete this lead?")) return;
-    const updated = leads.filter(l => l.id !== id);
-    setLeads(updated);
-    saveLeads(updated);
+    deleteMutation.mutate(id);
   }
 
   function logout() {
@@ -439,12 +393,17 @@ export default function Admin() {
                   </tbody>
                 </table>
               </div>
-              {filteredLeads.length === 0 && (
+              {isLoading ? (
+                <div className="text-center py-12">
+                  <RefreshCw className="w-8 h-8 text-teal-600 animate-spin mx-auto mb-3" />
+                  <p className="text-slate-500 text-sm font-medium">Loading data from database...</p>
+                </div>
+              ) : filteredLeads.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm">No leads yet. Student profiles created on the homepage will appear here.</p>
+                  <p className="text-slate-400 text-sm font-medium">No leads yet. Student profiles created on the homepage will appear here.</p>
                 </div>
-              )}
+              ) : null}
             </div>
           </motion.div>
         )}
@@ -481,12 +440,17 @@ export default function Admin() {
                   </tbody>
                 </table>
               </div>
-              {students.length === 0 && (
+              {isLoading ? (
+                <div className="text-center py-12">
+                  <RefreshCw className="w-8 h-8 text-teal-600 animate-spin mx-auto mb-3" />
+                  <p className="text-slate-500 text-sm font-medium">Loading data from database...</p>
+                </div>
+              ) : students.length === 0 ? (
                 <div className="text-center py-12">
                   <GraduationCap className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm">No student profiles yet.</p>
+                  <p className="text-slate-400 text-sm font-medium">No student profiles yet.</p>
                 </div>
-              )}
+              ) : null}
             </div>
           </motion.div>
         )}

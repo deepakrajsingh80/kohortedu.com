@@ -79,4 +79,12 @@ export const leadRouter = createRouter({
         .where(eq(leads.id, input.id));
       return { success: true };
     }),
+
+  delete: publicQuery
+    .input(z.number())
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      await db.delete(leads).where(eq(leads.id, input));
+      return { success: true };
+    }),
 });

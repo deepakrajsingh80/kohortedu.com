@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocalAuth } from "@/hooks/useLocalAuth";
 import { useProfile } from "@/context/ProfileContext";
+import { trpc } from "@/providers/trpc";
 
 const UniversityGrid = lazy(() => import("@/components/UniversityGrid"));
 import {
@@ -113,6 +114,7 @@ function ScrollReveal({ children, className = "", delay = 0 }: { children: React
 export default function Home() {
   const { isAuthenticated, user } = useLocalAuth();
   const { setProfile } = useProfile();
+  const createLeadMutation = trpc.lead.create.useMutation();
   const [formData, setFormData] = useState({
     fullName: "", email: "", phone: "", destination: "",
     courseInterest: "", preferredIntake: "", city: "",
@@ -142,6 +144,18 @@ export default function Home() {
     e.preventDefault();
     if (!formData.fullName || !formData.email || !formData.phone || !formData.destination || !formData.courseInterest) return;
     
+    // Save lead to backend database
+    createLeadMutation.mutate({
+      fullName: formData.fullName,
+      email: formData.email,
+      phone: formData.phone,
+      destination: formData.destination as any,
+      courseInterest: formData.courseInterest as any,
+      preferredIntake: (formData.preferredIntake as any) || "later",
+      city: formData.city,
+      message: `Preferred budget: ₹${formData.budget} Lakhs`,
+    });
+
     // Save to ProfileContext for personalized journey
     const profileMeta = courseToProfile(formData.courseInterest);
     setProfile({

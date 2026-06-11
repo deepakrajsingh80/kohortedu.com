@@ -1,0 +1,2170 @@
+import { useState, useMemo, useEffect } from "react";
+import { Link } from "react-router";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import { useCart } from "@/context/CartContext";
+import { getConsultantsForCountry, type Consultant } from "@/data/consultants";
+import { getCourseRecommendations as getTrendingCourses } from "@/data/courseRecommendations";
+import { getEnrollmentByCountry } from "@/data/indianEnrollment";
+import { getVocationalCourses, getVocationalColleges, hasVocationalData, type VocationalCourse } from "@/data/vocationalCourses";
+
+import { Badge } from "@/components/ui/badge";
+import {
+  Calculator, TrendingUp, DollarSign, MapPin, Star, Banknote,
+  BookOpen, Briefcase, Clock, Home, Wallet, Target,
+  Sparkles, Lightbulb, Users, User, Lock, ArrowRight, CheckCircle2, Crown,
+  Table2, ShoppingCart, Play, MousePointer, FileText,
+  BarChart3, Award, Zap, Shield, MessageCircle, X, Mail, Phone, BadgeCheck, AlertTriangle,
+  Stethoscope, Brain, FlaskConical, Palette, Calculator as CalculatorIcon,
+} from "lucide-react";
+
+/* ═══════════════════════════════════════════════════════════════
+   DYNAMIC EXAM FIELD CONFIGURATION
+   Changes the last form field based on Level + Major selection
+   ═══════════════════════════════════════════════════════════════ */
+interface ExamConfig {
+  label: string;
+  placeholder: string;
+  min: number;
+  max: number;
+  step: number;
+  icon: React.ElementType;
+  helperText: string;
+  unit: string;
+}
+
+const EXAM_CONFIG: Record<string, ExamConfig> = {
+  // ─── UG combinations ───
+  "UG-STEM":       { label: "SAT / JEE Score",      placeholder: "e.g. 1350",   min: 400,  max: 1600, step: 10,  icon: Calculator,       helperText: "SAT (400-1600) or JEE rank for India-adjacent planning", unit: "points" },
+  "UG-Medicine":   { label: "NEET Score",           placeholder: "e.g. 550",    min: 0,    max: 720,  step: 1,   icon: Stethoscope,      helperText: "NEET out of 720. 137+ qualifies. 550+ for govt colleges.", unit: "/720" },
+  "UG-Mgmt":       { label: "CAT Percentile / SAT", placeholder: "e.g. 85",     min: 0,    max: 100,  step: 0.1, icon: Brain,            helperText: "CAT percentile (0-100) or SAT score (400-1600)", unit: "percentile" },
+  "UG-Accts":      { label: "12th Board %",         placeholder: "e.g. 88",     min: 0,    max: 100,  step: 0.1, icon: CalculatorIcon,   helperText: "Your 12th standard percentage. 85%+ preferred for top colleges.", unit: "%" },
+  "UG-Arts":       { label: "12th Board %",         placeholder: "e.g. 82",     min: 0,    max: 100,  step: 0.1, icon: Palette,          helperText: "Your 12th standard percentage + portfolio for design programs", unit: "%" },
+  // ─── PG combinations ───
+  "PG-STEM":       { label: "GRE Score",            placeholder: "e.g. 325",    min: 260,  max: 340,  step: 1,   icon: FlaskConical,     helperText: "GRE General out of 340. 320+ is competitive for top STEM programs.", unit: "/340" },
+  "PG-Medicine":   { label: "MCAT / NEET Score",    placeholder: "e.g. 515",    min: 472,  max: 528,  step: 1,   icon: Stethoscope,      helperText: "MCAT (472-528) for USA/Canada. NEET (0-720) for other countries.", unit: "score" },
+  "PG-Mgmt":       { label: "GMAT Score",           placeholder: "e.g. 700",    min: 205,  max: 805,  step: 1,   icon: Brain,            helperText: "GMAT Focus Edition (205-805). 665+ for top-50 B-schools.", unit: "/805" },
+  "PG-Accts":      { label: "CPA/ACCA Papers Cleared", placeholder: "e.g. 5",     min: 0,    max: 13,   step: 1,   icon: CalculatorIcon,   helperText: "Number of ACCA papers cleared (0-13). Or CPA exams passed (0-4).", unit: "papers" },
+  "PG-Arts":       { label: "IELTS + Portfolio",    placeholder: "e.g. 7.5",    min: 4,    max: 9,    step: 0.5, icon: Palette,          helperText: "IELTS score (4.0-9.0). Portfolio required for design/arts programs.", unit: "band" },
+};
+
+function getExamConfig(level: Level, major: Major): ExamConfig | null {
+  if (!level || !major) return null;
+  return EXAM_CONFIG[`${level}-${major}`] || null;
+}
+
+const PREMIUM_BUNDLE = {
+  id: "premium-bundle",
+  name: "Premium Bundle",
+  subtitle: "Full Access — 17 Countries, 16 Consultants, All Reports",
+  price: 999,
+  originalPrice: 2499,
+  icon: "Crown",
+};
+
+/* ---- Types ---- */
+type CourseType = "" | "Academic" | "Vocational";
+type Level = "" | "UG" | "PG";
+type Major = "" | "STEM" | "Medicine" | "Mgmt" | "Accts" | "Arts";
+type Track = "Govt" | "Private";
+type PRPriority = "High" | "Med" | "Low";
+type RegionFilter = "Any" | string;
+
+const MAJOR_LABEL: Record<string, string> = {
+  STEM: "STEM", Medicine: "Medicine", Mgmt: "Management",
+  Accts: "Accounts", Arts: "Arts & Humanities", "": "—",
+};
+
+/* ─── Course Recommendation Engine ───
+   Maps (CourseType × Level × Major) → recommended degree programs ── */
+interface ProgramRec {
+  name: string;
+  desc: string;
+  topCountries: string[];
+  duration: string;
+  career: string;
+}
+
+function getCourseRecommendations(courseType: CourseType, level: Level, major: Major): ProgramRec[] {
+  if (!courseType || !level || !major) return [];
+  const key = `${courseType}-${level}-${major}`;
+  const map: Record<string, ProgramRec[]> = {
+    // ─── ACADEMIC + UG ───
+    "Academic-UG-STEM": [
+      { name: "B.Tech / BS Computer Science", desc: "Core programming, AI, data structures. Most versatile degree for global tech careers.", topCountries: ["USA", "Canada", "Germany"], duration: "4 years", career: "Software Engineer, $90-150K" },
+      { name: "B.Tech Electrical / Electronics", desc: "Hardware design, embedded systems, robotics. Strong demand in automotive & chip industry.", topCountries: ["Germany", "USA", "Netherlands"], duration: "4 years", career: "Hardware Engineer, $80-130K" },
+      { name: "BS Data Science & Analytics", desc: "Statistics, ML, visualization. Fastest-growing field with applications in every industry.", topCountries: ["USA", "UK", "Ireland"], duration: "3-4 years", career: "Data Analyst, $85-140K" },
+      { name: "B.Tech Mechanical / Automotive", desc: "Design, manufacturing, thermodynamics. Germany's automotive industry absorbs thousands.", topCountries: ["Germany", "Canada", "Australia"], duration: "4 years", career: "Design Engineer, $75-120K" },
+    ],
+    "Academic-UG-Medicine": [
+      { name: "MBBS / MD Medicine", desc: "Clinical medicine, patient care, rotations. Direct pathway to medical practice globally.", topCountries: ["Russia", "Georgia", "Philippines"], duration: "5-6 years", career: "Doctor / Resident, $120-250K" },
+      { name: "BDS Dentistry", desc: "Oral surgery, orthodontics, prosthodontics. High earning potential with own practice option.", topCountries: ["Russia", "Georgia", "Philippines"], duration: "5 years", career: "Dentist, $100-200K" },
+      { name: "B.Pharm Pharmacy", desc: "Drug development, clinical trials, pharmacology. Growing demand in pharma hubs.", topCountries: ["USA", "UK", "Ireland"], duration: "4 years", career: "Pharmacist, $90-130K" },
+      { name: "BSc Nursing", desc: "Patient care, healthcare admin, specialized nursing. Critical shortage worldwide.", topCountries: ["Canada", "Australia", "Germany"], duration: "3-4 years", career: "Registered Nurse, $70-110K" },
+    ],
+    "Academic-UG-Mgmt": [
+      { name: "BBA Business Administration", desc: "Finance, marketing, operations. Foundation for MBA or direct corporate roles.", topCountries: ["USA", "Canada", "Singapore"], duration: "3-4 years", career: "Business Analyst, $70-110K" },
+      { name: "BCom Accounting & Finance", desc: "Auditing, taxation, investment analysis. Direct pathway to CPA/ACCA.", topCountries: ["Canada", "Australia", "UK"], duration: "3 years", career: "Accountant, $65-100K" },
+      { name: "BS Economics", desc: "Macro/micro economics, policy analysis, quantitative methods. Strong for consulting.", topCountries: ["UK", "USA", "Netherlands"], duration: "3 years", career: "Economic Analyst, $75-120K" },
+    ],
+    "Academic-UG-Accts": [
+      { name: "BCom / BA Accounting", desc: "Financial accounting, auditing, tax. Step 1 toward CPA (USA) or ACCA (UK).", topCountries: ["Canada", "Australia", "USA"], duration: "3-4 years", career: "Staff Accountant, $60-95K" },
+      { name: "BS Finance & Investment", desc: "Capital markets, portfolio management, corporate finance. Wall Street feeder.", topCountries: ["USA", "UK", "Singapore"], duration: "3-4 years", career: "Financial Analyst, $80-130K" },
+      { name: "BBA Taxation & Audit", desc: "Tax law, forensic accounting, compliance. Evergreen demand in every country.", topCountries: ["Canada", "Australia", "Germany"], duration: "3 years", career: "Tax Consultant, $65-105K" },
+    ],
+    "Academic-UG-Arts": [
+      { name: "BA Psychology", desc: "Clinical, organizational, counseling psychology. Growing demand in healthcare & HR.", topCountries: ["USA", "Canada", "UK"], duration: "3-4 years", career: "Psychologist, $70-120K" },
+      { name: "BA Liberal Arts", desc: "Interdisciplinary: philosophy, literature, sociology. Top US colleges love this.", topCountries: ["USA", "Netherlands", "Canada"], duration: "4 years", career: "Consultant, $65-100K" },
+      { name: "BA Media & Communication", desc: "Journalism, PR, digital media. Strong in creative economies.", topCountries: ["UK", "USA", "Australia"], duration: "3 years", career: "Media Manager, $60-95K" },
+      { name: "BArch Architecture", desc: "Design, urban planning, sustainable construction. Creative + technical blend.", topCountries: ["Germany", "Australia", "Canada"], duration: "5 years", career: "Architect, $75-130K" },
+    ],
+    // ─── ACADEMIC + PG ───
+    "Academic-PG-STEM": [
+      { name: "MS Computer Science / AI", desc: "Deep learning, NLP, computer vision. #1 choice for Indian STEM grads.", topCountries: ["USA", "Canada", "Germany"], duration: "1-2 years", career: "ML Engineer, $130-200K" },
+      { name: "MS Data Science", desc: "Big data, statistical modeling, cloud ML. Every company needs data scientists.", topCountries: ["USA", "Ireland", "UK"], duration: "1-2 years", career: "Data Scientist, $120-180K" },
+      { name: "MS Cybersecurity", desc: "Ethical hacking, network security, compliance. 0% unemployment rate globally.", topCountries: ["USA", "UK", "Australia"], duration: "1-2 years", career: "Security Engineer, $120-170K" },
+      { name: "MEng / MS Mechanical", desc: "Advanced manufacturing, robotics, aerospace. Germany's hidden gem.", topCountries: ["Germany", "Canada", "USA"], duration: "2 years", career: "Project Engineer, $100-150K" },
+    ],
+    "Academic-PG-Medicine": [
+      { name: "MS / MD Surgery", desc: "Specialized surgical training. Highly competitive but highest medical salaries.", topCountries: ["USA", "UK", "Germany"], duration: "3-5 years", career: "Surgeon, $250-500K" },
+      { name: "MPH Public Health", desc: "Epidemiology, health policy, biostatistics. Post-COVID demand surge.", topCountries: ["USA", "UK", "Canada"], duration: "1-2 years", career: "Health Director, $90-150K" },
+      { name: "MS Biotechnology", desc: "Genomics, drug discovery, clinical research. Strong pharma pipeline.", topCountries: ["USA", "Germany", "Ireland"], duration: "2 years", career: "Research Scientist, $95-140K" },
+      { name: "MSc Nursing / Healthcare Admin", desc: "Leadership roles in nursing. Direct PR pathway in Canada & Australia.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "Nurse Manager, $90-130K" },
+    ],
+    "Academic-PG-Mgmt": [
+      { name: "MBA (General)", desc: "Strategy, leadership, operations. The gold standard for management careers.", topCountries: ["USA", "UK", "Canada"], duration: "1-2 years", career: "Product Manager, $130-200K" },
+      { name: "MBA Finance", desc: "Investment banking, corporate finance, PE/VC. Highest ROI among all MBAs.", topCountries: ["USA", "UK", "France"], duration: "1-2 years", career: "Investment Banker, $150-300K" },
+      { name: "MBA Technology / Product", desc: "Tech strategy, product management, agile. Perfect for STEM grads pivoting.", topCountries: ["USA", "Singapore", "Germany"], duration: "1-2 years", career: "Tech PM, $140-220K" },
+      { name: "MS Supply Chain Management", desc: "Logistics, procurement, operations. Critical post-pandemic skill gap.", topCountries: ["Germany", "Netherlands", "USA"], duration: "1-2 years", career: "SC Manager, $100-160K" },
+    ],
+    "Academic-PG-Accts": [
+      { name: "MSc Accounting / CPA Track", desc: "US GAAP, audit, corporate tax. Prepares for CPA licensure in USA.", topCountries: ["USA", "Canada", "Australia"], duration: "1-2 years", career: "Senior Accountant, $95-140K" },
+      { name: "MSc Finance (MFin)", desc: "Quantitative finance, derivatives, risk management. Hardcore finance track.", topCountries: ["USA", "UK", "Singapore"], duration: "1-2 years", career: "Quant Analyst, $130-250K" },
+      { name: "MBA Accounting & Finance", desc: "Business + accounting hybrid. Best for leadership in finance functions.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "Finance Manager, $110-170K" },
+    ],
+    "Academic-PG-Arts": [
+      { name: "MA / MS Psychology (Clinical)", desc: "Therapy, assessment, mental health. Licensed practice pathway.", topCountries: ["USA", "Canada", "UK"], duration: "2 years", career: "Clinical Psychologist, $85-140K" },
+      { name: "MA UX / Interaction Design", desc: "User research, prototyping, design systems. Tech + creative intersection.", topCountries: ["USA", "Netherlands", "Sweden"], duration: "1-2 years", career: "UX Lead, $110-170K" },
+      { name: "MA International Relations", desc: "Diplomacy, global policy, NGO work. Gateway to UN, World Bank.", topCountries: ["UK", "Netherlands", "Switzerland"], duration: "1-2 years", career: "Policy Advisor, $80-130K" },
+      { name: "MEd Education Leadership", desc: "Curriculum design, EdTech, admin. Growing with online education.", topCountries: ["USA", "Canada", "Australia"], duration: "1-2 years", career: "Education Director, $75-120K" },
+    ],
+    // ─── VOCATIONAL + UG ───
+    "Vocational-UG-STEM": [
+      { name: "Advanced Diploma IT / Networking", desc: "Cisco, cloud admin, DevOps. 2-year fast track to tech jobs with PR.", topCountries: ["Canada", "Australia", "New Zealand"], duration: "2 years", career: "Network Admin, $70-100K" },
+      { name: "Diploma Cybersecurity Operations", desc: "SOC analyst, incident response, compliance. Massive skill shortage.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "SOC Analyst, $80-120K" },
+      { name: "Diploma Cloud Computing (AWS/Azure)", desc: "Cloud architecture, serverless, containers. Every company is migrating.", topCountries: ["Canada", "Australia", "Germany"], duration: "1-2 years", career: "Cloud Admin, $85-130K" },
+    ],
+    "Vocational-UG-Medicine": [
+      { name: "Diploma Practical Nursing (PN)", desc: "Direct patient care, clinic work. Fastest healthcare PR pathway in Canada.", topCountries: ["Canada", "Australia", "New Zealand"], duration: "2 years", career: "LPN / RN, $65-95K" },
+      { name: "Diploma Medical Lab Technology", desc: "Diagnostics, pathology, lab management. In-demand behind-the-scenes role.", topCountries: ["Canada", "Australia", "Germany"], duration: "2 years", career: "Lab Technician, $60-90K" },
+      { name: "Certificate Aged Care / Disability", desc: "Elderly care, support work. Huge demand in aging Western populations.", topCountries: ["Australia", "Canada", "New Zealand"], duration: "1-2 years", career: "Care Coordinator, $55-80K" },
+    ],
+    "Vocational-UG-Mgmt": [
+      { name: "Diploma Hospitality Management", desc: "Hotel ops, tourism, event management. Canada's booming sector.", topCountries: ["Canada", "Australia", "New Zealand"], duration: "2 years", career: "Hotel Manager, $55-85K" },
+      { name: "Diploma Supply Chain & Logistics", desc: "Warehousing, procurement, distribution. Essential infrastructure role.", topCountries: ["Canada", "Australia", "Germany"], duration: "1-2 years", career: "Logistics Coord, $65-95K" },
+      { name: "Diploma HR Management", desc: "Recruitment, labor law, payroll. Every company needs HR.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "HR Coordinator, $55-85K" },
+    ],
+    "Vocational-UG-Accts": [
+      { name: "Diploma Accounting & Payroll", desc: "Bookkeeping, tax prep, payroll systems. Steady demand, PR-friendly.", topCountries: ["Canada", "Australia", "New Zealand"], duration: "1-2 years", career: "Bookkeeper, $55-80K" },
+      { name: "Diploma Financial Planning", desc: "Wealth management, insurance, retirement planning. Commission + salary.", topCountries: ["Canada", "Australia"], duration: "1-2 years", career: "Financial Planner, $70-110K" },
+      { name: "Certificate Business Analytics", desc: "Excel, Power BI, SQL. Bridge to data science with minimal math.", topCountries: ["Canada", "Ireland", "Australia"], duration: "1 year", career: "Business Analyst, $70-100K" },
+    ],
+    "Vocational-UG-Arts": [
+      { name: "Diploma Graphic Design", desc: "Branding, UI design, motion graphics. Creative + tech intersection.", topCountries: ["Canada", "Australia", "UK"], duration: "2 years", career: "Graphic Designer, $55-85K" },
+      { name: "Diploma Early Childhood Education", desc: "Preschool teaching, child development. PR priority occupation.", topCountries: ["Canada", "Australia", "New Zealand"], duration: "1-2 years", career: "ECE Teacher, $50-75K" },
+      { name: "Certificate Digital Marketing", desc: "SEO, PPC, social media, analytics. Fastest entry to marketing.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1 year", career: "Digital Marketer, $60-90K" },
+    ],
+    // ─── VOCATIONAL + PG ───
+    "Vocational-PG-STEM": [
+      { name: "PG Diploma Data Analytics", desc: "Python, SQL, Tableau. Intensive 1-year program with co-op.", topCountries: ["Canada", "Ireland", "Australia"], duration: "1 year", career: "Data Analyst, $85-130K" },
+      { name: "PG Diploma Project Management", desc: "PMP prep, agile, stakeholder management. Universal skill.", topCountries: ["Canada", "Australia", "New Zealand"], duration: "1 year", career: "Project Manager, $95-140K" },
+      { name: "PG Diploma Software Development", desc: "Full-stack, cloud native, mobile dev. Co-op included.", topCountries: ["Canada", "Ireland", "Australia"], duration: "1-2 years", career: "Software Dev, $100-150K" },
+    ],
+    "Vocational-PG-Medicine": [
+      { name: "PG Diploma Public Health", desc: "Epidemiology, health admin, policy. Shorter alternative to MPH.", topCountries: ["Canada", "Australia", "UK"], duration: "1 year", career: "Health Officer, $75-110K" },
+      { name: "PG Diploma Clinical Research", desc: "Trials management, regulatory affairs, pharmacovigilance.", topCountries: ["Canada", "Ireland", "Germany"], duration: "1-2 years", career: "Clinical Assoc, $80-120K" },
+    ],
+    "Vocational-PG-Mgmt": [
+      { name: "PG Diploma International Business", desc: "Global trade, cross-border strategy, export/import.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "Trade Manager, $85-130K" },
+      { name: "PG Diploma Operations Management", desc: "Lean, Six Sigma, process optimization. Manufacturing & services.", topCountries: ["Canada", "Germany", "Australia"], duration: "1-2 years", career: "Ops Manager, $95-140K" },
+      { name: "PG Diploma Marketing Analytics", desc: "Data-driven marketing, CRM, customer insights.", topCountries: ["Canada", "Ireland", "Australia"], duration: "1 year", career: "Marketing Analyst, $80-120K" },
+    ],
+    "Vocational-PG-Accts": [
+      { name: "PG Diploma Accounting (CPA Track)", desc: "US GAAP, audit, tax. Prepares for CPA exams while studying.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "Accountant, $85-125K" },
+      { name: "PG Diploma Fintech", desc: "Blockchain, digital payments, robo-advisory. Emerging field.", topCountries: ["Canada", "Ireland", "Singapore"], duration: "1 year", career: "Fintech Analyst, $95-140K" },
+    ],
+    "Vocational-PG-Arts": [
+      { name: "PG Diploma UX / UI Design", desc: "Figma, user research, prototyping. In-demand creative-tech hybrid.", topCountries: ["Canada", "Australia", "Ireland"], duration: "1-2 years", career: "UX Designer, $90-140K" },
+      { name: "PG Diploma Media Production", desc: "Video editing, content strategy, social media production.", topCountries: ["Canada", "Australia", "UK"], duration: "1-2 years", career: "Content Lead, $75-110K" },
+      { name: "PG Diploma Counselling Psychology", desc: "Mental health, therapy techniques, community support.", topCountries: ["Canada", "Australia", "UK"], duration: "1-2 years", career: "Counsellor, $70-105K" },
+    ],
+  };
+  return map[key] || [];
+}
+
+const COUNTRIES_BY_REGION: Record<string, string[]> = {
+  "North America": ["Canada", "USA"],
+  "Europe — Western": ["UK", "Ireland", "Netherlands", "France", "Germany", "Sweden", "Italy"],
+  "Europe — Eastern": ["Poland", "Russia", "Georgia"],
+  "Asia-Pacific": ["Australia", "New Zealand", "Singapore", "Philippines", "South Korea", "Malaysia"],
+  "Middle East": ["UAE"],
+};
+
+/* ---- Inline country data (lightweight) ---- */
+const COUNTRIES = ["Canada", "Germany", "UK", "USA", "Australia", "New Zealand", "Ireland", "Netherlands", "France", "Italy", "Sweden", "Poland", "Singapore", "UAE", "Russia", "Georgia", "Philippines", "South Korea", "Malaysia"];
+
+/* Country name → destination page ID */
+const COUNTRY_TO_ID: Record<string, string> = {
+  Canada: "canada", Germany: "germany", UK: "uk", USA: "usa",
+  Australia: "australia", "New Zealand": "newzealand", Ireland: "ireland",
+  Netherlands: "netherlands", France: "france", Italy: "italy", Sweden: "sweden",
+  Poland: "poland", Singapore: "singapore", UAE: "dubai", Russia: "russia",
+  Georgia: "georgia", Philippines: "philippines", "South Korea": "south-korea",
+  Malaysia: "malaysia",
+};
+
+const LIVING: Record<string, number> = {
+  Canada: 13, Germany: 11, UK: 16, USA: 14, Australia: 14, "New Zealand": 12, Ireland: 13, Netherlands: 12,
+  France: 10, Italy: 9, Sweden: 12, Poland: 6, Singapore: 16, UAE: 12, Russia: 6, Georgia: 5, Philippines: 4,
+  "South Korea": 10, Malaysia: 6
+};
+const BASE_TUITION: Record<string, number> = {
+  Canada: 30, Germany: 1, UK: 25, USA: 35, Australia: 20, "New Zealand": 18, Ireland: 18, Netherlands: 15,
+  France: 10, Italy: 8, Sweden: 12, Poland: 6, Singapore: 20, UAE: 18, Russia: 5, Georgia: 4, Philippines: 3,
+  "South Korea": 8, Malaysia: 6
+};
+const EARN: Record<string, number> = {
+  Canada: 43.2, Germany: 45.1, UK: 44.2, USA: 44.2, Australia: 53.8, "New Zealand": 45.1, Ireland: 41.3,
+  Netherlands: 36.1, France: 42.2, Italy: 27.8, Sweden: 38.4, Poland: 20.2, Singapore: 19.2, UAE: 9.6, Russia: 11.5, Georgia: 8.6, Philippines: 4.3,
+  "South Korea": 22.8, Malaysia: 12.4
+};
+const SALARY: Record<string, number> = {
+  Canada: 45, Germany: 42, UK: 40, USA: 55, Australia: 40, "New Zealand": 30, Ireland: 38, Netherlands: 40,
+  France: 32, Italy: 28, Sweden: 35, Poland: 22, Singapore: 45, UAE: 35, Russia: 18, Georgia: 15, Philippines: 12,
+  "South Korea": 32, Malaysia: 18
+};
+
+/* ---- Indian Student Safety Index (research-based, 0-100) ----
+   Sources: MEA India advisories, OSAC, student surveys, news reports 2020-2025
+   Higher = safer for Indian students specifically
+*/
+const INDIAN_SAFETY: Record<string, number> = {
+  Canada: 88, Germany: 86, Singapore: 92, Australia: 78, "New Zealand": 83,
+  UK: 82, Ireland: 84, Netherlands: 85, France: 75, Sweden: 84,
+  Italy: 76, Poland: 80, "South Korea": 85, Malaysia: 82, UAE: 80,
+  USA: 72, Russia: 68, Georgia: 75, Philippines: 70,
+};
+
+/* ---- Visa Ease Score (0-10): ease of visa process + post-study options ---- */
+const VISA_EASE: Record<string, number> = {
+  Canada: 9, Germany: 8, Australia: 8, Ireland: 8, Malaysia: 8,
+  Netherlands: 7, "New Zealand": 7, France: 7, Sweden: 7, UK: 7,
+  "South Korea": 7, Poland: 6, UAE: 6, Italy: 6, Georgia: 6,
+  Singapore: 5, USA: 5, Russia: 5, Philippines: 5,
+};
+
+/* ---- PR Score (0-10): speed & ease of permanent residency pathway ---- */
+const PR_SCORE: Record<string, number> = {
+  Canada: 9, Germany: 8, Australia: 8, Ireland: 8, "New Zealand": 7,
+  Netherlands: 7, Sweden: 7, UK: 6, France: 6, Malaysia: 5,
+  "South Korea": 5, Poland: 5, Italy: 4, UAE: 1, Singapore: 3,
+  USA: 4, Russia: 4, Georgia: 4, Philippines: 1,
+};
+
+/* ---- Employment Index (0-10): job market strength for Indian graduates ---- */
+const EMPLOYMENT: Record<string, number> = {
+  Canada: 9, Germany: 8, USA: 8, Singapore: 8, UK: 7,
+  Ireland: 7, Netherlands: 7, Australia: 7, Sweden: 7,
+  "South Korea": 6, "New Zealand": 6, Malaysia: 6, UAE: 6,
+  France: 6, Poland: 5, Italy: 5, Russia: 4, Georgia: 4, Philippines: 4,
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   WORK EXPERIENCE — VISA POINTS BONUS BY COUNTRY
+   Points added to country score based on work experience years.
+   Australia, Canada, NZ give the most points for skilled work ex.
+   ═══════════════════════════════════════════════════════════════ */
+type WorkExpLevel = "0" | "0-1" | "1-2" | "2-4" | "4-6" | "6+";
+
+const WORK_EXP_LABEL: Record<WorkExpLevel, string> = {
+  "0": "Fresher (0 years)",
+  "0-1": "< 1 year",
+  "1-2": "1-2 years",
+  "2-4": "2-4 years",
+  "4-6": "4-6 years",
+  "6+": "6+ years",
+};
+
+/* Visa/PR points bonus per country for work experience (0-10 scale) */
+const WORK_EXP_VISA_BONUS: Record<string, Record<WorkExpLevel, number>> = {
+  // ─── High bonus: direct points in PR system ───
+  Australia:  { "0": 0, "0-1": 1, "1-2": 3, "2-4": 5, "4-6": 8, "6+": 10 },
+  Canada:     { "0": 0, "0-1": 2, "1-2": 4, "2-4": 6, "4-6": 8, "6+": 10 },
+  "New Zealand": { "0": 0, "0-1": 1, "1-2": 3, "2-4": 5, "4-6": 7, "6+": 9 },
+  // ─── Medium bonus: helps visa but not direct points ───
+  Germany:    { "0": 0, "0-1": 1, "1-2": 2, "2-4": 4, "4-6": 6, "6+": 8 },
+  UK:         { "0": 0, "0-1": 0, "1-2": 1, "2-4": 3, "4-6": 5, "6+": 7 },
+  Ireland:    { "0": 0, "0-1": 0, "1-2": 1, "2-4": 3, "4-6": 5, "6+": 7 },
+  Netherlands:{ "0": 0, "0-1": 0, "1-2": 1, "2-4": 3, "4-6": 5, "6+": 7 },
+  Sweden:     { "0": 0, "0-1": 0, "1-2": 1, "2-4": 3, "4-6": 5, "6+": 7 },
+  France:     { "0": 0, "0-1": 0, "1-2": 1, "2-4": 2, "4-6": 4, "6+": 6 },
+  Singapore:  { "0": 0, "0-1": 1, "1-2": 2, "2-4": 4, "4-6": 6, "6+": 8 },
+  // ─── Low bonus: minimal impact ───
+  USA:        { "0": 0, "0-1": 0, "1-2": 1, "2-4": 2, "4-6": 3, "6+": 5 },
+  UAE:        { "0": 0, "0-1": 1, "1-2": 2, "2-4": 3, "4-6": 4, "6+": 5 },
+  // ─── Default for others ───
+  Italy:      { "0": 0, "0-1": 0, "1-2": 1, "2-4": 2, "4-6": 3, "6+": 4 },
+  Poland:     { "0": 0, "0-1": 0, "1-2": 1, "2-4": 2, "4-6": 3, "6+": 4 },
+  Malaysia:   { "0": 0, "0-1": 0, "1-2": 1, "2-4": 2, "4-6": 3, "6+": 4 },
+  "South Korea": { "0": 0, "0-1": 0, "1-2": 1, "2-4": 2, "4-6": 3, "6+": 4 },
+  Russia:     { "0": 0, "0-1": 0, "1-2": 0, "2-4": 1, "4-6": 2, "6+": 3 },
+  Georgia:    { "0": 0, "0-1": 0, "1-2": 0, "2-4": 1, "4-6": 2, "6+": 3 },
+  Philippines:{ "0": 0, "0-1": 0, "1-2": 0, "2-4": 1, "4-6": 2, "6+": 3 },
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   PG WORK EXPERIENCE REQUIREMENTS
+   Which PG courses strongly prefer or require work experience.
+   Used to warn/advise users when selecting certain combinations.
+   ═══════════════════════════════════════════════════════════════ */
+interface WorkExReq {
+  required: boolean;      // true = must have, false = preferred
+  minYears: number;       // minimum years needed
+  idealYears: number;     // ideal years for competitive admission
+  note: string;           // display note for user
+}
+
+const PG_WORK_EX_REQ: Record<string, WorkExReq> = {
+  "PG-Mgmt":  { required: false, minYears: 2, idealYears: 4, note: "MBA programs strongly prefer 2-5 years of work experience. Top B-schools need 4+ years." },
+  "PG-Medicine": { required: false, minYears: 0, idealYears: 1, note: "Clinical PG programs value healthcare experience. Research programs need lab/research experience." },
+  "PG-STEM":  { required: false, minYears: 0, idealYears: 1, note: "Work experience not required for MS. But 1-2 years strengthens your profile for top programs." },
+  "PG-Accts": { required: false, minYears: 0, idealYears: 1, note: "MFin/Accounting programs accept freshers. CPA-track candidates benefit from audit experience." },
+  "PG-Arts":  { required: false, minYears: 0, idealYears: 0, note: "Arts PG programs generally do not require work experience. Portfolio matters more." },
+};
+
+function getWorkExReq(level: Level, major: Major): WorkExReq | null {
+  if (level !== "PG" || !major) return null;
+  return PG_WORK_EX_REQ[`${level}-${major}`] || null;
+}
+
+const STREAM_MULT: Record<Major, number> = { STEM: 1.0, Medicine: 1.8, Mgmt: 1.2, Accts: 0.9, Arts: 0.8 };
+const DURATION: Record<string, number> = { UG: 4, PG: 2 };
+const FIT_BASE: Record<string, number> = {
+  Canada: 9, Germany: 9, UK: 8, USA: 9, Australia: 8, "New Zealand": 7, Ireland: 8, Netherlands: 8,
+  France: 7, Italy: 6, Sweden: 8, Poland: 6, Singapore: 8, UAE: 6, Russia: 5, Georgia: 5, Philippines: 5,
+  "South Korea": 7, Malaysia: 7
+};
+const VISA: Record<string, string> = {
+  Canada: "PGWP 3yr → CEC", Germany: "JobSeeker → BlueCard", UK: "Graduate Visa → Skilled",
+  USA: "OPT → H1B", Australia: "PSWV → PR 189/190", "New Zealand": "PSWV → SMC → PR",
+  Ireland: "Stamp 1G → Critical Skills", Netherlands: "Orientation → Search → PR",
+  France: "APS → Talent Passport → PR", Italy: "Permit → EC Long Term",
+  Sweden: "Job Seeker → Work → PR", Poland: "Work Permit → TRP → PR",
+  Singapore: "LTVP → EP → PR (hard)", UAE: "NO PR. Work Visa only",
+  Russia: "Permit → RVP → PR", Georgia: "Permit → TRP → PR 6yr", Philippines: "NO PR",
+  "South Korea": "D-10 → E-7 → F-2 → F-5", Malaysia: "EP → RP-T → PR",
+};
+const PR_PATH: Record<string, string> = {
+  Canada: "3-4 yrs (CEC after 1 yr work)", Germany: "3-4 yrs (Blue Card → PR)",
+  UK: "3-5 yrs (Skilled Worker → ILR)", USA: "5-8 yrs (H1B → Green Card)",
+  Australia: "2-3 yrs (PR 189/190)", "New Zealand": "2-3 yrs (SMC after 2 yrs)",
+  Ireland: "2-3 yrs (Critical Skills → Stamp4)", Netherlands: "3-4 yrs",
+  France: "3-5 yrs (Talent Passport)", Italy: "5+ yrs", Sweden: "3-4 yrs",
+  Poland: "3-5 yrs", Singapore: "5-8 yrs (very hard)", UAE: "NO PR",
+  Russia: "3-5 yrs", Georgia: "5-6 yrs", Philippines: "NO PR",
+  "South Korea": "3-4 yrs (F-2 → F-5)", Malaysia: "3-5 yrs (points-based)",
+};
+const JOB: Record<string, string> = {
+  Canada: "High", Germany: "High", UK: "High", USA: "High", Australia: "High",
+  "New Zealand": "Medium", Ireland: "High", Netherlands: "High", France: "High",
+  Italy: "Medium", Sweden: "High", Poland: "Medium", Singapore: "High",
+  UAE: "Medium", Russia: "Medium", Georgia: "Medium", Philippines: "Medium",
+  "South Korea": "Medium", Malaysia: "Medium",
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIFETIME VALUE — Long-term PR & settlement benefits by country
+   Factors in 10-year earnings growth, healthcare, education, PR pathway value.
+   This is what basic ROI misses: a ₹50L investment in USA can return ₹3Cr+
+   over a decade when you factor salary growth + benefits for family.
+   ═══════════════════════════════════════════════════════════════════════════ */
+interface LifetimeValue {
+  salaryGrowth10Yr: number;       // Multiplier: 1yr salary × this = 10yr total
+  healthcareAnnual: number;       // ₹ Lakhs saved per year (public healthcare)
+  educationPerChild: number;      // ₹ Lakhs saved per child (K-12 + university)
+  prToCitizenshipYrs: number;     // Years from study start to citizenship
+  socialSafetyNet: number;        // 0-10 score (unemployment, pension, benefits)
+  longTermMultiplier: number;     // Overall multiplier applied to base salary
+}
+
+const LIFETIME_VALUE: Record<string, LifetimeValue> = {
+  // ─── Tier 1: Best long-term value ───
+  Canada: {
+    salaryGrowth10Yr: 2.8,      // ₹45L → ₹126L over 10 years
+    healthcareAnnual: 4.0,       // Universal healthcare saves ~₹4L/yr
+    educationPerChild: 35.0,     // Free K-12 + subsidized university
+    prToCitizenshipYrs: 5,       // Study(2) → PGWP(1) → PR(1) → Citz(1)
+    socialSafetyNet: 9,          // EI, CPP, OAS, strong safety net
+    longTermMultiplier: 1.35,
+  },
+  Australia: {
+    salaryGrowth10Yr: 2.6,      // ₹40L → ₹104L over 10 years
+    healthcareAnnual: 3.5,       // Medicare saves ~₹3.5L/yr
+    educationPerChild: 30.0,     // Free public schools + HECS university
+    prToCitizenshipYrs: 6,       // Study(2) → 485(2) → PR(1) → Citz(1)
+    socialSafetyNet: 8,          // Centrelink, superannuation
+    longTermMultiplier: 1.30,
+  },
+  Germany: {
+    salaryGrowth10Yr: 2.4,      // ₹42L → ₹100L over 10 years
+    healthcareAnnual: 4.5,       // Public insurance ~₹4.5L value/yr
+    educationPerChild: 25.0,     // Free university (no tuition!)
+    prToCitizenshipYrs: 8,       // Study(2) → Work(2) → PR(2) → Citz(2)
+    socialSafetyNet: 9,          // Unemployment benefits, pension, childcare
+    longTermMultiplier: 1.25,
+  },
+  // ─── Tier 2: Strong but slower PR ───
+  USA: {
+    salaryGrowth10Yr: 3.5,      // ₹55L → ₹192L over 10 years (highest growth)
+    healthcareAnnual: 1.5,       // Employer insurance, not universal
+    educationPerChild: 50.0,     // Free K-12 + in-state tuition saves huge
+    prToCitizenshipYrs: 12,      // Long path: H1B(3) → GC(5) → Citz(4)
+    socialSafetyNet: 4,          // Minimal (Social Security, Medicare at 65)
+    longTermMultiplier: 1.50,    // Highest earning potential
+  },
+  UK: {
+    salaryGrowth10Yr: 2.5,      // ₹40L → ₹100L over 10 years
+    healthcareAnnual: 5.0,       // NHS free at point of use
+    educationPerChild: 28.0,     // Free state schools + lower uni fees
+    prToCitizenshipYrs: 6,       // Study(1) → PSW(2) → ILR(2) → Citz(1)
+    socialSafetyNet: 7,          // NHS, state pension, JSA
+    longTermMultiplier: 1.28,
+  },
+  Ireland: {
+    salaryGrowth10Yr: 2.4,      // ₹38L → ₹91L over 10 years
+    healthcareAnnual: 3.0,       // Public healthcare system
+    educationPerChild: 22.0,     // Free primary/secondary
+    prToCitizenshipYrs: 5,       // Stamp 1G(2) → Stamp 4(1) → Citz(2)
+    socialSafetyNet: 7,
+    longTermMultiplier: 1.20,
+  },
+  "New Zealand": {
+    salaryGrowth10Yr: 2.2,      // ₹30L → ₹66L over 10 years
+    healthcareAnnual: 3.0,       // Public health system
+    educationPerChild: 25.0,     // Free state education
+    prToCitizenshipYrs: 6,
+    socialSafetyNet: 8,
+    longTermMultiplier: 1.18,
+  },
+  Netherlands: {
+    salaryGrowth10Yr: 2.3,      // ₹40L → ₹92L over 10 years
+    healthcareAnnual: 3.5,       // Mandatory but subsidized
+    educationPerChild: 20.0,
+    prToCitizenshipYrs: 7,
+    socialSafetyNet: 8,
+    longTermMultiplier: 1.15,
+  },
+  Sweden: {
+    salaryGrowth10Yr: 2.2,      // ₹35L → ₹77L over 10 years
+    healthcareAnnual: 4.0,       // Universal healthcare
+    educationPerChild: 30.0,     // Free education + childcare subsidies
+    prToCitizenshipYrs: 7,
+    socialSafetyNet: 9,
+    longTermMultiplier: 1.15,
+  },
+  // ─── Tier 3: Moderate long-term value ───
+  France: {
+    salaryGrowth10Yr: 2.0,      // ₹32L → ₹64L over 10 years
+    healthcareAnnual: 4.0,       // Excellent public healthcare
+    educationPerChild: 18.0,     // Free public education
+    prToCitizenshipYrs: 8,
+    socialSafetyNet: 8,
+    longTermMultiplier: 1.10,
+  },
+  Singapore: {
+    salaryGrowth10Yr: 2.5,      // ₹45L → ₹112L over 10 years
+    healthcareAnnual: 1.0,       // Medisave system, not fully covered
+    educationPerChild: 15.0,
+    prToCitizenshipYrs: 8,       // Very difficult PR → citizenship
+    socialSafetyNet: 5,
+    longTermMultiplier: 1.15,
+  },
+  UAE: {
+    salaryGrowth10Yr: 1.8,      // ₹35L → ₹63L (tax-free but limited growth)
+    healthcareAnnual: 0,         // Employer-provided, no permanent settlement
+    educationPerChild: 20.0,     // International schools expensive
+    prToCitizenshipYrs: 99,      // No pathway to citizenship
+    socialSafetyNet: 2,
+    longTermMultiplier: 0.85,    // No PR, temporary by design
+  },
+  // ─── Tier 4: Limited long-term value ───
+  Italy: { salaryGrowth10Yr: 1.7, healthcareAnnual: 3.0, educationPerChild: 12.0, prToCitizenshipYrs: 10, socialSafetyNet: 6, longTermMultiplier: 0.90 },
+  Poland: { salaryGrowth10Yr: 1.8, healthcareAnnual: 2.0, educationPerChild: 8.0, prToCitizenshipYrs: 8, socialSafetyNet: 5, longTermMultiplier: 0.85 },
+  Malaysia: { salaryGrowth10Yr: 1.6, healthcareAnnual: 1.0, educationPerChild: 8.0, prToCitizenshipYrs: 10, socialSafetyNet: 4, longTermMultiplier: 0.75 },
+  "South Korea": { salaryGrowth10Yr: 1.8, healthcareAnnual: 2.0, educationPerChild: 10.0, prToCitizenshipYrs: 10, socialSafetyNet: 6, longTermMultiplier: 0.85 },
+  Russia: { salaryGrowth10Yr: 1.5, healthcareAnnual: 1.0, educationPerChild: 5.0, prToCitizenshipYrs: 8, socialSafetyNet: 4, longTermMultiplier: 0.70 },
+  Georgia: { salaryGrowth10Yr: 1.5, healthcareAnnual: 0.5, educationPerChild: 3.0, prToCitizenshipYrs: 10, socialSafetyNet: 3, longTermMultiplier: 0.65 },
+  Philippines: { salaryGrowth10Yr: 1.4, healthcareAnnual: 0, educationPerChild: 2.0, prToCitizenshipYrs: 99, socialSafetyNet: 2, longTermMultiplier: 0.55 },
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SALARY RANGES BY COUNTRY (₹ Lakhs) — Entry / Mid / Senior
+   Entry = fresh grad, Mid = 3-5 yrs, Senior = 8+ yrs
+   ═══════════════════════════════════════════════════════════════════════════ */
+const SALARY_RANGE: Record<string, { entry: number; mid: number; senior: number }> = {
+  Canada:     { entry: 38, mid: 55, senior: 85 },
+  Germany:    { entry: 35, mid: 50, senior: 75 },
+  UK:         { entry: 32, mid: 48, senior: 72 },
+  USA:        { entry: 50, mid: 85, senior: 150 },
+  Australia:  { entry: 35, mid: 52, senior: 78 },
+  Ireland:    { entry: 30, mid: 45, senior: 68 },
+  Netherlands:{ entry: 34, mid: 50, senior: 74 },
+  "New Zealand": { entry: 28, mid: 42, senior: 62 },
+  Sweden:     { entry: 30, mid: 44, senior: 65 },
+  France:     { entry: 26, mid: 40, senior: 58 },
+  Singapore:  { entry: 38, mid: 60, senior: 95 },
+  UAE:        { entry: 30, mid: 50, senior: 80 },
+  Italy:      { entry: 20, mid: 32, senior: 48 },
+  Poland:     { entry: 16, mid: 26, senior: 40 },
+  Malaysia:   { entry: 14, mid: 22, senior: 35 },
+  "South Korea": { entry: 22, mid: 35, senior: 55 },
+  Russia:     { entry: 12, mid: 20, senior: 32 },
+  Georgia:    { entry: 10, mid: 16, senior: 26 },
+  Philippines:{ entry: 8,  mid: 14, senior: 22 },
+};
+
+/* Helper: get salary range display string */
+function getSalaryRange(country: string): string {
+  const r = SALARY_RANGE[country];
+  if (!r) return "N/A";
+  return `₹${r.entry}–${r.senior}L`;
+}
+
+/* ---- Compute functions (enhanced) ---- */
+function compute(country: string, track: Track, level: Level, major: Major) {
+  let baseTuition = BASE_TUITION[country] || 10;
+  // Germany private universities have real tuition (€5K-20K/yr)
+  if (country === "Germany" && track === "Private") {
+    baseTuition = 18;
+  }
+  const tuition = track === "Govt" 
+    ? baseTuition * STREAM_MULT[major] * 0.6 
+    : baseTuition * STREAM_MULT[major];
+
+  // ─── Living cost with 10% annual increase ───
+  // Year 1 = base, Year 2 = +10%, Year 3 = +21%, Year 4 = +33.1%
+  const baseLiving = LIVING[country] || 10;
+  const duration = DURATION[level];
+  let totalLiving = 0;
+  for (let yr = 0; yr < duration; yr++) {
+    totalLiving += baseLiving * Math.pow(1.10, yr);
+  }
+  const living = Math.round(totalLiving * 10) / 10;
+
+  const earnings = (EARN[country] || 20) * (duration / 4);
+  const netOOP = Math.round((tuition + living - earnings) * 10) / 10;
+
+  // ─── 3-Year ROI: cumulative 3-year salary / Net OOP ───
+  // Uses mid-level salary (3-5 yrs experience) for realistic projection
+  const sr = SALARY_RANGE[country];
+  const midSalary = sr ? sr.mid : SALARY[country];
+  const threeYearSalary = midSalary * 3;
+  const roi = netOOP > 0 ? Math.round((threeYearSalary / netOOP) * 10) / 10 : null;
+
+  // ─── Ideal Budget: Net OOP + 20% buffer ───
+  const idealBudget = netOOP > 0 ? Math.round(netOOP * 1.2 * 10) / 10 : 0;
+
+  // ─── Lifetime ROI: 10-year earnings + benefits vs education cost ───
+  const lv = LIFETIME_VALUE[country];
+  let lifetimeValue = 0;
+  if (lv && netOOP > 0) {
+    const tenYearEarnings = midSalary * lv.salaryGrowth10Yr;
+    const healthcareSaved = lv.healthcareAnnual * 10;
+    const educationSaved = lv.educationPerChild * 1;
+    const prFastTrackBonus = lv.prToCitizenshipYrs <= 6 ? 15 :
+                              lv.prToCitizenshipYrs <= 10 ? 8 : 0;
+    lifetimeValue = tenYearEarnings + healthcareSaved + educationSaved + prFastTrackBonus;
+  }
+  const lifetimeROI = netOOP > 0 ? Math.round((lifetimeValue / netOOP) * 10) / 10 : null;
+
+  return {
+    tuition: Math.round(tuition * 10) / 10,
+    living,
+    earnings: Math.round(earnings * 10) / 10,
+    netOOP,
+    idealBudget,
+    roi,
+    lifetimeValue: Math.round(lifetimeValue * 10) / 10,
+    lifetimeROI,
+    salary: midSalary,               // Single number for calculations
+    salaryRange: getSalaryRange(country), // Display string like "₹38–85L"
+    salaryEntry: sr ? sr.entry : SALARY[country],
+    salarySenior: sr ? sr.senior : SALARY[country],
+    employment: EMPLOYMENT[country] || 5,
+    visaEase: VISA_EASE[country] || 5,
+    prScore: PR_SCORE[country] || 5,
+    safety: INDIAN_SAFETY[country] || 70,
+  };
+}
+
+/* Helper: get work experience visa bonus for display */
+function getWorkExpBonus(country: string, workExp: WorkExpLevel): number {
+  return WORK_EXP_VISA_BONUS[country]?.[workExp] || 0;
+}
+
+function score(country: string, track: Track, level: Level, major: Major, budget: number, prPriority: PRPriority, ielts: number, acad: number, workExp: WorkExpLevel) {
+  let base = (FIT_BASE[country] || 5) * STREAM_MULT[major] * 0.6;
+  let penalty = 0;
+  const fin = compute(country, track, level, major);
+
+  // ─── 1. BUDGET PENALTY (less aggressive) ───
+  // UG naturally costs more (4 yrs vs 2 yrs) — scale budget expectation
+  const levelBudgetMult = level === "UG" ? 1.6 : 1.0; // UG costs ~60% more
+  const adjustedBudget = budget * levelBudgetMult;
+  if (fin.netOOP > 0) {
+    const ratio = adjustedBudget / fin.netOOP;
+    // Was: >=1→0, >=0.7→1, >=0.5→2, else→3
+    // Now: >=1→0, >=0.6→0.5, >=0.4→1.5, else→2.5
+    penalty += ratio >= 1 ? 0 : ratio >= 0.6 ? 0.5 : ratio >= 0.4 ? 1.5 : 2.5;
+  }
+
+  // ─── 2. IELTS PENALTY ───
+  penalty += ielts >= 7 ? 0 : ielts >= 6.5 ? 0.5 : ielts >= 6 ? 1 : ielts >= 5.5 ? 1.5 : 2.5;
+
+  // ─── 3. ACADEMIC PENALTY ───
+  penalty += acad >= 65 ? 0 : acad >= 55 ? 0.5 : 1;
+
+  // ─── 4. PR PENALTY (only heavy when PR Priority = High) ───
+  if (prPriority === "High" && (country === "UAE" || country === "Philippines")) penalty += 2;
+  if (prPriority === "High" && fin.prScore < 5) penalty += 0.5; // Slight nudge for low-PR countries
+
+  // ─── 5. SAFETY BONUS / PENALTY ───
+  if (fin.safety >= 85) base += 0.3;
+  else if (fin.safety < 65) penalty += 0.5; // Was <70, now <65 (USA=72 safe)
+
+  // ─── 6. VISA EASE BONUS (0.0-0.4) ───
+  base += (fin.visaEase / 10) * 0.4;
+
+  // ─── 7. PR TIMELINE BONUS (0.0-0.4, weighted by user priority) ───
+  const prWeight = prPriority === "High" ? 1.0 : prPriority === "Med" ? 0.6 : 0.3;
+  base += (fin.prScore / 10) * 0.4 * prWeight;
+
+  // ─── 8. EMPLOYMENT BONUS (0.0-0.3) ───
+  base += (fin.employment / 10) * 0.3;
+
+  // ─── 9. POST-STUDY SALARY PREMIUM BONUS ───
+  // Uses ENTRY-LEVEL salary (conservative) for bonus — what fresh grads actually earn
+  if (fin.salaryEntry >= 45) base += 0.4;      // ₹45L+ entry (USA, Singapore)
+  else if (fin.salaryEntry >= 35) base += 0.25; // ₹35L+ entry (Canada, Germany, Australia)
+  else if (fin.salaryEntry >= 28) base += 0.15; // ₹28L+ entry (UK, Ireland, NZ)
+  else if (fin.salaryEntry >= 20) base += 0.05;
+
+  // ─── 9b. LIFETIME VALUE BONUS ───
+  // Countries with strong long-term PR benefits get a bonus
+  // This captures what basic ROI misses: 10yr earnings + healthcare + education
+  if (fin.lifetimeROI && fin.lifetimeROI > 0) {
+    if (fin.lifetimeROI >= 50) base += 0.6;      // Lifetime return 50x+ (Canada PR pathway)
+    else if (fin.lifetimeROI >= 30) base += 0.4;  // 30x+ (Australia, Germany)
+    else if (fin.lifetimeROI >= 15) base += 0.25; // 15x+ (UK, Ireland)
+    else if (fin.lifetimeROI >= 8) base += 0.1;   // 8x+ (modest)
+  }
+  // Direct long-term multiplier bonus (captures earning growth trajectory)
+  const lv = LIFETIME_VALUE[country];
+  if (lv) {
+    if (lv.longTermMultiplier >= 1.4) base += 0.3;  // USA exceptional growth
+    else if (lv.longTermMultiplier >= 1.25) base += 0.2; // Canada/Germany/Australia
+    else if (lv.longTermMultiplier >= 1.1) base += 0.1;
+    else if (lv.longTermMultiplier < 0.9) penalty += 0.2; // No long-term value
+  }
+
+  // ─── 10. EARNING POTENTIAL DURING STUDY ───
+  // Countries where part-time earnings offset costs better
+  if (fin.earnings >= 25) base += 0.15; // High part-time earnings (Australia)
+
+  // ─── 11. GERMANY BLOCKED ACCOUNT ───
+  if (country === "Germany" && budget < 20) penalty += 0.8;
+
+  // ─── 12. WORK EXPERIENCE BONUS ───
+  const weBonus = (WORK_EXP_VISA_BONUS[country]?.[workExp] || 0) / 10;
+  if (level === "PG") {
+    base += weBonus * 0.8;
+  } else {
+    base += weBonus * 0.3;
+  }
+
+  // ─── 13. MBA WORK EX PENALTY ───
+  if (level === "PG" && major === "Mgmt" && (workExp === "0" || workExp === "0-1")) {
+    penalty += 1.0; // Was 1.5, reduced
+  }
+
+  return Math.max(0, Math.min(10, Math.round((base - penalty) * 10) / 10));
+}
+
+function evaluateAll(params: { courseType: CourseType; level: Level; major: Major; budget: number; prPriority: PRPriority; ielts: number; track: Track; region: RegionFilter; workExp: WorkExpLevel }) {
+  const { level, major, budget, prPriority, ielts, track, region, workExp } = params;
+  let acad = 80;
+  let countries = COUNTRIES;
+  if (region !== "Any") {
+    countries = COUNTRIES.filter(c => c === region);
+    if (countries.length === 0) countries = COUNTRIES;
+  }
+  const results = countries.map(country => {
+    const s = score(country, track, level, major, budget, prPriority, ielts, acad, workExp);
+    const fin = compute(country, track, level, major);
+    const weBonus = getWorkExpBonus(country, workExp);
+    return {
+      country, score: s, ...fin,
+      visa: VISA[country], pr: PR_PATH[country], job: JOB[country],
+      jobNumeric: fin.employment,
+      workExpBonus: weBonus,
+      idealBudget: fin.idealBudget,
+      lifetimeValue: fin.lifetimeValue,
+      lifetimeROI: fin.lifetimeROI,
+      salaryRange: fin.salaryRange,
+      salaryEntry: fin.salaryEntry,
+      salarySenior: fin.salarySenior,
+      _rank: 0
+    };
+  });
+  results.sort((a, b) => b.score - a.score || a.country.localeCompare(b.country));
+  results.forEach((r, i) => r._rank = i + 1);
+  return results;
+}
+
+const formatROI = (r: number | null) => r === null ? "—" : `${r}x`;
+const formatMoney = (v: number) => `₹${v.toFixed(1)}L`;
+const scoreColor = (s: number) => s >= 7.5 ? "text-emerald-600" : s >= 5 ? "text-amber-600" : "text-red-600";
+const roiColor = (r: number | null) => { if (r === null) return "text-gray-500"; return r >= 2 ? "text-emerald-600" : r >= 1 ? "text-amber-600" : "text-red-600"; };
+const jobBg = (j: string) => j === "High" ? "bg-emerald-100 text-emerald-700" : j === "Medium" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700";
+
+/* ---- Consultant Contact Modal ---- */
+function ConsultantModal({ country, consultants, onClose }: { country: string; consultants: Consultant[]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-slate-900 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col border border-slate-700" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-800 to-slate-700 p-4 flex items-center justify-between shrink-0 border-b border-slate-700">
+          <div>
+            <h3 className="text-white font-bold text-lg flex items-center gap-2">
+              <Users className="w-5 h-5 text-teal-400" /> Consultants for {country}
+            </h3>
+            <p className="text-slate-400 text-xs mt-0.5">{consultants.length} verified consultants available</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Consultant List */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-3 bg-slate-900">
+          {consultants.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-400 text-sm">No consultants listed for this country yet.</p>
+            </div>
+          ) : (
+            consultants.map(c => (
+              <div key={c.id} className="border border-slate-700 rounded-xl p-4 hover:border-teal-500/40 hover:bg-slate-800/50 transition-all bg-slate-800/30">
+                {/* Top row */}
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center text-white text-sm font-bold shrink-0 shadow-lg shadow-teal-500/20">
+                    {c.initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-bold text-white text-sm truncate">{c.name}</h4>
+                      {c.verified && <BadgeCheck className="w-4 h-4 text-teal-400 shrink-0" />}
+                    </div>
+                    <p className="text-xs text-slate-400">{c.title} · {c.experience} · {c.successRate} success</p>
+                  </div>
+                </div>
+
+                {/* Specializations */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {c.specialization.slice(0, 3).map(s => (
+                    <span key={s} className="text-[10px] px-2.5 py-1 bg-slate-700/80 rounded-full text-slate-300 border border-slate-600">{s}</span>
+                  ))}
+                </div>
+
+                {/* Contact Buttons */}
+                <div className="flex gap-2">
+                  <a href={`mailto:${c.email}`} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-teal-500/10 text-teal-400 text-xs font-semibold hover:bg-teal-500/20 transition-colors border border-teal-500/20">
+                    <Mail className="w-3.5 h-3.5" /> Email
+                  </a>
+                  <a href={`https://wa.me/${c.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition-colors border border-emerald-500/20">
+                    <Phone className="w-3.5 h-3.5" /> WhatsApp
+                  </a>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 p-3 border-t border-slate-700 bg-slate-800/50 text-center">
+          <p className="text-[10px] text-slate-500">All consultants are verified by Kohortconnect</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DE_FORM_KEY = "kc_de_form_state";
+
+/* ---- Auth hook — polls for auth status changes in real-time ---- */
+function useLocalAuth() {
+  const [auth, setAuth] = useState(false);
+  useEffect(() => {
+    function check() {
+      const hasToken = document.cookie.includes("token") || localStorage.getItem("kc-auth") === "1";
+      const hasPremium = localStorage.getItem("kc_premium") === "true";
+      const userRaw = localStorage.getItem("kc_user");
+      const hasUser = !!userRaw;
+      // Also check if user object has isPremium flag
+      let userPremium = false;
+      if (userRaw) { try { userPremium = JSON.parse(userRaw).isPremium === true; } catch { /* ignore */ } }
+      setAuth(hasToken || hasPremium || hasUser || userPremium);
+    }
+    check();
+    const iv = setInterval(check, 1000); // poll every second
+    window.addEventListener("storage", check);
+    return () => { clearInterval(iv); window.removeEventListener("storage", check); };
+  }, []);
+  return auth;
+}
+
+/* ---- Premium-only hook — for masking results separately from auth ---- */
+function usePremiumStatus() {
+  const [premium, setPremium] = useState(false);
+  useEffect(() => {
+    function check() {
+      const hasPremium = localStorage.getItem("kc_premium") === "true";
+      const userRaw = localStorage.getItem("kc_user");
+      let userPremium = false;
+      if (userRaw) { try { userPremium = JSON.parse(userRaw).isPremium === true; } catch { /* ignore */ } }
+      setPremium(hasPremium || userPremium);
+    }
+    check();
+    const iv = setInterval(check, 1000);
+    window.addEventListener("storage", check);
+    return () => { clearInterval(iv); window.removeEventListener("storage", check); };
+  }, []);
+  return premium;
+}
+
+/* ---- Main Page ---- */
+export default function Evaluate() {
+  return <EvaluateContent />;
+}
+
+function EvaluateContent() {
+  const isAuthenticated = useLocalAuth();
+  const hasPremium = usePremiumStatus();
+  const { addItem, isInCart } = useCart();
+  const inCart = isInCart(PREMIUM_BUNDLE.id);
+
+  /* Load saved form state from localStorage (for returning from payment etc.) */
+  const savedForm = (() => {
+    try {
+      const raw = localStorage.getItem(DE_FORM_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return null;
+  })();
+
+  /* Load pre-filled data from Smart Match if available */
+  const prefilled = (() => {
+    try {
+      const raw = localStorage.getItem("kc_smartmatch_data");
+      if (raw) { localStorage.removeItem("kc_smartmatch_data"); return JSON.parse(raw); }
+    } catch { /* ignore */ }
+    return null;
+  })();
+
+  // All fields start empty after logout — user MUST select each one
+  const initialCourseType: CourseType = (savedForm?.courseType as CourseType) || "";
+  const initialLevel: Level = (savedForm?.level as Level) || "";
+  const initialMajor: Major = (savedForm?.major as Major) || "";
+  const initialBudget: number = savedForm?.budget ?? 0;
+  const initialPr: PRPriority = (savedForm?.prPriority as PRPriority) || "Med";
+  const initialIelts: number = savedForm?.ielts ?? 0;
+  const initialTrack: Track = (savedForm?.track as Track) || "Private";
+  const initialRegion: RegionFilter = savedForm?.region || "Any";
+  const initialWorkExp: WorkExpLevel = savedForm?.workExp || "0";
+  const initialEngineStarted: boolean = false;
+
+  const [courseType, setCourseType] = useState<CourseType>(initialCourseType);
+  const [level, setLevel] = useState<Level>(initialLevel);
+  const [major, setMajor] = useState<Major>(initialMajor);
+  const [budget, setBudget] = useState<number>(initialBudget);
+  const [prPriority, setPrPriority] = useState<PRPriority>(initialPr);
+  const [ielts, setIelts] = useState<number>(initialIelts);
+  const [track, setTrack] = useState<Track>(initialTrack);
+  const [region, setRegion] = useState<RegionFilter>(initialRegion);
+  const [workExp, setWorkExp] = useState<WorkExpLevel>(initialWorkExp);
+  const [engineStarted, setEngineStarted] = useState<boolean>(initialEngineStarted);
+  const [examScore, setExamScore] = useState<number>(0);
+
+  /* ═══════ DERIVED: Get exam config based on level + major ═══════ */
+  const examConfig = useMemo(() => getExamConfig(level, major), [level, major]);
+
+  /* Consultant modal state */
+  const [consultantModal, setConsultantModal] = useState<{ country: string; consultants: Consultant[] } | null>(null);
+  const [courseModal, setCourseModal] = useState<{ country: string; programs: ProgramRec[] } | null>(null);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+
+  function validateAndStart() {
+    const errors: string[] = [];
+    if (!courseType) errors.push("Select Course Type");
+    if (!level) errors.push("Select Education Level");
+    if (!major) errors.push("Select Major / Field");
+    if (budget <= 0 || !budget) errors.push("Enter your budget (₹ Lakhs)");
+    if (ielts <= 0 || !ielts) errors.push("Enter your IELTS score");
+    if (errors.length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setFormErrors([]);
+    setEngineStarted(true);
+  }
+
+  // Persist form state to localStorage on every change
+  useEffect(() => {
+    localStorage.setItem(DE_FORM_KEY, JSON.stringify({ courseType, level, major, budget, prPriority, ielts, track, region, workExp, engineStarted }));
+  }, [courseType, level, major, budget, prPriority, ielts, track, region, workExp, engineStarted]);
+
+  // Auto-start engine when returning after payment (authenticated + valid data)
+  useEffect(() => {
+    if (isAuthenticated && budget > 0 && ielts > 0 && !engineStarted) {
+      setEngineStarted(true);
+    }
+  }, [isAuthenticated]); // only trigger on auth change
+
+  // Only compute results after user clicks "Start Engine" AND values are valid
+  const results = useMemo(() => {
+    if (!engineStarted || budget <= 0 || ielts <= 0) return [];
+    return evaluateAll({ courseType, level, major, budget, prPriority, ielts, track, region, workExp });
+  }, [engineStarted, courseType, level, major, budget, prPriority, ielts, track, region, workExp]);
+  const top3 = results.slice(0, 3);
+  const trackLabel = track === "Govt" ? "Government" : "Private";
+  const regionLabel = region === "Any" ? "All Countries" : region;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-teal-50/30 to-amber-50/20">
+      <Navbar />
+
+      {/* Hero */}
+      <section className="pt-28 pb-4 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-100 text-teal-700 text-xs font-semibold tracking-wider uppercase">
+              <Sparkles className="w-3.5 h-3.5" /> AI-Powered
+            </span>
+            <span className="text-xs text-slate-500 font-mono tracking-widest uppercase">19 Countries Analysed</span>
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">
+            Study Abroad <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-teal-500 italic font-serif">Decision Engine</span>
+          </h1>
+          <p className="mt-3 text-lg text-slate-600 max-w-2xl">
+            Profile yourself in 90 seconds. See Net Out-of-Pocket, ROI, and your top 3 destinations ranked by fit score.
+          </p>
+        </div>
+      </section>
+
+      {/* Profile Gate — Required before using Decision Engine */}
+      {!isAuthenticated && (
+        <section className="px-4 sm:px-6 lg:px-8 pb-5">
+          <div className="max-w-7xl mx-auto">
+            <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-amber-50 rounded-2xl border-2 border-amber-300 p-6 sm:p-8 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl" />
+              <div className="relative flex flex-col sm:flex-row items-center gap-6">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-lg">
+                  <Lock className="w-8 h-8 text-white" />
+                </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">Create Your Free Profile to Unlock the Decision Engine</h3>
+                  <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                    We need your profile to personalise recommendations and connect you with the right consultants.
+                    It takes 2 minutes — no credit card required. See your #3 ranked country FREE. Unlock #1 & #2 + full table with Premium.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center sm:justify-start">
+                    <Link
+                      to="/login"
+                      className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl font-bold text-sm hover:from-teal-500 transition-all shadow-lg shadow-teal-600/25"
+                    >
+                      <User className="w-4 h-4" /> Create Free Profile <ArrowRight className="w-4 h-4" />
+                    </Link>
+                    <Link
+                      to="/smart-match"
+                      className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-slate-700 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-all"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-500" /> Try Smart Match First
+                    </Link>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-amber-200/60 flex flex-wrap gap-x-4 gap-y-1 justify-center sm:justify-start">
+                <span className="text-[11px] text-amber-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 90-Second Profile</span>
+                <span className="text-[11px] text-amber-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Free Forever</span>
+                <span className="text-[11px] text-amber-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> No Spam Guarantee</span>
+                <span className="text-[11px] text-amber-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 2,500+ Students Trust Us</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* How It Works — Tutorial Banner */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-5">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 rounded-2xl p-5 sm:p-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl" />
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-4">
+                <Play className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-mono tracking-widest uppercase text-amber-400 font-bold">How to Use — 4 Simple Steps</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <StepCard num="1" icon={MousePointer} title="Fill All Fields" desc="Select course type, education level, major, budget & IELTS score. All fields marked with * are required." />
+                <StepCard num="2" icon={BarChart3} title="Pick Institution Track" desc="Private (default) shows all options. Government filters for subsidized/public universities — lower cost, competitive entry." />
+                <StepCard num="3" icon={FileText} title="Review Your Scores" desc="See Rank #3 FREE instantly. Your top 2 matches + the full 17-country table unlock with Premium." />
+                <StepCard num="4" icon={Award} title="Unlock Full Results" desc="Upgrade to Premium (₹999) to reveal your #1 & #2 matches, detailed financials & consultant contacts." />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pre-filled from Smart Match */}
+      {prefilled && (
+        <section className="px-4 sm:px-6 lg:px-8 pb-5">
+          <div className="max-w-7xl mx-auto">
+            <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-2xl p-4 flex items-start gap-3">
+              <Sparkles className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-teal-800 mb-1">Data pre-filled from your Smart Match</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className="bg-white text-teal-700 border-teal-200 text-xs">Budget: ₹{prefilled.budget}L</Badge>
+                  <Badge className="bg-white text-teal-700 border-teal-200 text-xs">Major: {prefilled.major}</Badge>
+                  <Badge className="bg-white text-teal-700 border-teal-200 text-xs">Level: {prefilled.level}</Badge>
+                  <Badge className="bg-white text-teal-700 border-teal-200 text-xs">{prefilled.track === "Govt" ? "Government" : "Private"} Track</Badge>
+                  <Badge className="bg-white text-teal-700 border-teal-200 text-xs">PR Priority: {prefilled.prPriority}</Badge>
+                </div>
+              </div>
+              <button onClick={() => { localStorage.removeItem("kc_smartmatch_data"); window.location.reload(); }} className="text-xs text-teal-600 hover:text-teal-800 underline shrink-0">
+                Reset All
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* AUTH GATE: Track Toggle + Inputs + Results — hidden for non-authenticated users */}
+      {isAuthenticated && (
+      <>
+      {/* Track Toggle */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-5">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-slate-900 rounded-2xl p-3 flex flex-wrap items-center gap-3">
+            <span className="text-xs font-mono tracking-widest uppercase text-slate-400">Institution Track</span>
+            <div className="flex bg-slate-800 rounded-xl p-1 border border-slate-700">
+              {(["Private", "Govt"] as Track[]).map(t => (
+                <button key={t} onClick={() => setTrack(t)}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 ${track === t ? "bg-white text-slate-900 shadow" : "text-slate-400 hover:text-slate-200"}`}>
+                  {t === "Govt" ? (
+                    <><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> Government</>
+                  ) : "Private"}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] text-slate-500 ml-auto hidden sm:inline-flex items-center gap-1">
+              <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> = subsidized fees, competitive entry
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Inputs */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-5 sm:p-6">
+            <div className="absolute-bar" />
+            {/* Choose prompt banner */}
+            <div className="mb-5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <MousePointer className="w-5 h-5 text-blue-600 shrink-0" />
+              <p className="text-sm font-semibold text-blue-800">
+                Please select from the options below — all fields marked with <span className="text-red-500">*</span> are required.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Field label="Course Type" required>
+                <select value={courseType} onChange={e => { setCourseType(e.target.value as CourseType); setFormErrors([]); }} className="form-select" required>
+                  <option value="" disabled>— Choose Course Type —</option>
+                  <option value="Academic">Academic (Degree)</option>
+                  <option value="Vocational">Vocational Courses (PR Pathways)</option>
+                </select>
+              </Field>
+              <Field label="Education Level" required>
+                <select value={level} onChange={e => { setLevel(e.target.value as Level); setExamScore(0); setFormErrors([]); }} className="form-select" required>
+                  <option value="" disabled>— Choose Level —</option>
+                  <option value="UG">UG (Bachelors / Diploma)</option>
+                  <option value="PG">PG (Masters)</option>
+                </select>
+              </Field>
+              <Field label="Major / Field" required>
+                <select value={major} onChange={e => { setMajor(e.target.value as Major); setExamScore(0); setFormErrors([]); }} className="form-select" required>
+                  <option value="" disabled>— Choose Major —</option>
+                  <option value="STEM">STEM</option>
+                  <option value="Medicine">Medicine</option>
+                  <option value="Mgmt">Management</option>
+                  <option value="Accts">Accounts</option>
+                  <option value="Arts">Arts</option>
+                </select>
+              </Field>
+              <Field label="Budget (₹ Lakhs)" required>
+                <input type="number" min={5} max={300} value={budget || ""} onChange={e => { setBudget(+e.target.value); setFormErrors([]); }} className="form-input" placeholder="e.g. 25" required />
+              </Field>
+              <Field label="PR Priority">
+                <select value={prPriority} onChange={e => setPrPriority(e.target.value as PRPriority)} className="form-select">
+                  <option value="High">High — PR is top goal</option>
+                  <option value="Med">Medium</option>
+                  <option value="Low">Low — May return to India</option>
+                </select>
+              </Field>
+              <Field label="IELTS Score" required>
+                <input type="number" min={4} max={9} step={0.5} value={ielts || ""} onChange={e => { setIelts(+e.target.value); setFormErrors([]); }} className="form-input" placeholder="e.g. 7.0" required />
+              </Field>
+              <Field label="Work Experience">
+                <select value={workExp} onChange={e => setWorkExp(e.target.value as WorkExpLevel)} className="form-select">
+                  <option value="0">Fresher (0 years)</option>
+                  <option value="0-1">&lt; 1 year</option>
+                  <option value="1-2">1-2 years</option>
+                  <option value="2-4">2-4 years</option>
+                  <option value="4-6">4-6 years</option>
+                  <option value="6+">6+ years</option>
+                </select>
+                {/* Work experience requirement note for PG courses */}
+                {(() => {
+                  const req = getWorkExReq(level, major);
+                  if (!req) return null;
+                  return (
+                    <p className="text-[10px] text-amber-600 mt-1 flex items-start gap-1">
+                      <Briefcase className="w-3 h-3 shrink-0 mt-0.5" />
+                      {req.note}
+                    </p>
+                  );
+                })()}
+              </Field>
+              <Field label="Region / Country">
+                <select value={region} onChange={e => setRegion(e.target.value as RegionFilter)} className="form-select">
+                  <option value="Any">All 19 Countries</option>
+                  <optgroup label="North America">
+                    <option value="Canada">Canada</option>
+                    <option value="USA">USA</option>
+                  </optgroup>
+                  <optgroup label="Europe — Western">
+                    <option value="UK">UK</option>
+                    <option value="Ireland">Ireland</option>
+                    <option value="Netherlands">Netherlands</option>
+                    <option value="France">France</option>
+                    <option value="Germany">Germany</option>
+                    <option value="Sweden">Sweden</option>
+                    <option value="Italy">Italy</option>
+                  </optgroup>
+                  <optgroup label="Europe — Eastern">
+                    <option value="Poland">Poland</option>
+                    <option value="Russia">Russia</option>
+                    <option value="Georgia">Georgia</option>
+                  </optgroup>
+                  <optgroup label="Asia-Pacific">
+                    <option value="Australia">Australia</option>
+                    <option value="New Zealand">New Zealand</option>
+                    <option value="Singapore">Singapore</option>
+                    <option value="Philippines">Philippines</option>
+                    <option value="South Korea">South Korea</option>
+                    <option value="Malaysia">Malaysia</option>
+                  </optgroup>
+                  <optgroup label="Middle East">
+                    <option value="UAE">UAE</option>
+                  </optgroup>
+                </select>
+              </Field>
+              {/* ═══════════════════════════════════════════════════════════════
+                  DYNAMIC EXAM FIELD — changes based on Level + Major
+                  ═══════════════════════════════════════════════════════════════ */}
+              <Field label={examConfig ? examConfig.label : "Exam Score"} required>
+                <div className="relative">
+                  {examConfig && (
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                      <examConfig.icon className="w-4 h-4" />
+                    </div>
+                  )}
+                  <input 
+                    type="number" 
+                    min={examConfig?.min || 0} 
+                    max={examConfig?.max || 100} 
+                    step={examConfig?.step || 1}
+                    value={examScore || ""} 
+                    onChange={e => { setExamScore(+e.target.value); setFormErrors([]); }} 
+                    className={`form-input ${examConfig ? 'pl-10' : ''}`}
+                    placeholder={examConfig?.placeholder || "Enter score"}
+                    required 
+                    disabled={!level || !major}
+                  />
+                  {examConfig && examScore > 0 && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400">
+                      {examConfig.unit}
+                    </span>
+                  )}
+                </div>
+                {/* Helper text below input */}
+                {examConfig ? (
+                  <p className="text-[10px] text-slate-500 mt-1 flex items-start gap-1">
+                    <Sparkles className="w-3 h-3 text-teal-500 shrink-0 mt-0.5" />
+                    {examConfig.helperText}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-amber-600 mt-1">
+                    Select Level and Major first to see your required exam
+                  </p>
+                )}
+              </Field>
+            </div>
+            {/* Start Engine Button */}
+            <div className="mt-5 flex flex-col sm:flex-row items-center gap-3">
+              <button
+                onClick={validateAndStart}
+                className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-teal-600 to-teal-700 text-white rounded-xl font-bold text-sm hover:from-teal-500 transition-all shadow-lg shadow-teal-600/25"
+              >
+                <Zap className="w-5 h-5" /> {engineStarted ? "Recalculate Results" : "Start Engine"}
+              </button>
+              <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                <span className="text-red-500">*</span> = Required fields. Budget & IELTS must be &gt; 0.
+              </p>
+              {formErrors.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {formErrors.map(e => (
+                    <p key={e} className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Results only shown after engine started */}
+      {!engineStarted ? (
+        <section className="px-4 sm:px-6 lg:px-8 pb-20">
+          <div className="max-w-7xl mx-auto text-center py-16">
+            <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-5">
+              <Calculator className="w-10 h-10 text-slate-400" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Ready to Calculate</h3>
+            <p className="text-slate-500 max-w-md mx-auto mb-2">Set your <strong className="text-slate-700">Budget</strong> and <strong className="text-slate-700">IELTS score</strong> (both required), then click <strong className="text-teal-600">Start Engine</strong> to see your top country recommendations.</p>
+            <p className="text-xs text-slate-400">We analyse 19 countries across tuition, living costs, earnings, safety, visa ease & PR pathways.</p>
+          </div>
+        </section>
+      ) : (
+        <>
+      {/* Top 3 — Teaser: #3 visible, #1 and #2 blurred */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-baseline gap-3 mb-5 flex-wrap">
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">Your Top 3 Recommendations</h2>
+            <span className="text-xs text-slate-500 font-mono tracking-widest uppercase">{trackLabel} · {courseType || "—"} · {level || "—"} · {MAJOR_LABEL[major] || "—"} · {regionLabel}</span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
+            {/* Rank #1 — FULL for premium, BLURRED for guests */}
+            {top3[0] && (
+              <div className={`bg-white rounded-2xl border-2 border-amber-400 shadow-xl overflow-hidden ${!hasPremium ? "relative" : ""}`}>
+                <div className="px-4 py-2 text-xs font-bold text-white font-mono tracking-wider uppercase bg-gradient-to-r from-amber-400 to-amber-600">RANK #1 — BEST MATCH</div>
+                <div className="p-5">
+                  <div className={!hasPremium ? "blur-[5px] opacity-40 pointer-events-none select-none" : ""}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-2xl font-bold text-slate-900">{top3[0].country}</h3>
+                      <div className={`text-3xl font-bold ${scoreColor(top3[0].score)}`}>{top3[0].score.toFixed(1)}<span className="text-sm text-slate-400 font-normal">/10</span></div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <FinRow icon={DollarSign} label="Tuition" value={formatMoney(top3[0].tuition)} />
+                      <FinRow icon={Home} label="Living" value={formatMoney(top3[0].living)} />
+                      <FinRow icon={Wallet} label="Part-Time Earnings" value={formatMoney(top3[0].earnings)} />
+                      <FinRow icon={Target} label="Net Out of Pocket" value={formatMoney(top3[0].netOOP)} highlight />
+                      <FinRow icon={Wallet} label="Ideal Budget" value={`₹${top3[0].idealBudget.toFixed(1)}L`} />
+                      <FinRow icon={TrendingUp} label="Basic ROI" value={formatROI(top3[0].roi)} valueClass={roiColor(top3[0].roi)} />
+                      {top3[0].lifetimeROI && top3[0].lifetimeROI > 0 && (
+                        <FinRow icon={Sparkles} label="Lifetime ROI (10yr)" value={`${top3[0].lifetimeROI}x (₹${top3[0].lifetimeValue.toFixed(0)}L return)`} valueClass={top3[0].lifetimeROI >= 30 ? "text-emerald-600" : top3[0].lifetimeROI >= 15 ? "text-teal-600" : "text-amber-600"} />
+                      )}
+                      <FinRow icon={MapPin} label="Visa Pathway" value={top3[0].visa} />
+                      <FinRow icon={Clock} label="PR Timeline" value={top3[0].pr} />
+                      <div className="flex items-center gap-2 pt-1"><Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" /><span className="text-xs text-slate-500 uppercase font-mono w-16">Job Market</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${jobBg(top3[0].job)}`}>{top3[0].job}</span></div>
+                      {top3[0].workExpBonus > 0 && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <Award className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                          <span className="text-xs text-slate-500 uppercase font-mono w-16">Work Ex Bonus</span>
+                          <span className="text-xs font-bold text-teal-600">+{top3[0].workExpBonus} visa points</span>
+                        </div>
+                      )}
+                      <FinRow icon={DollarSign} label="Salary Range" value={`${top3[0].salaryRange}`} />
+                    </div>
+                  </div>
+                  {!hasPremium && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-amber-50/80 p-4 text-center">
+                      <Lock className="w-8 h-8 text-amber-600 mb-2" />
+                      <p className="text-lg font-bold text-slate-900">{top3[0].country}</p>
+                      <p className="text-sm text-teal-700 font-bold mb-1">Score: {top3[0].score.toFixed(1)} / 10</p>
+                      <p className="text-xs text-slate-600 mb-3 max-w-[200px]">Your best match. Unlock Premium to see full financial breakdown.</p>
+                      {!inCart ? (
+                        <button onClick={() => addItem(PREMIUM_BUNDLE)} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg text-xs font-bold hover:from-amber-400 transition-all">
+                          <ShoppingCart className="w-3.5 h-3.5" /> Unlock — ₹999
+                        </button>
+                      ) : (
+                        <Link to="/checkout" onClick={() => localStorage.setItem("kc_premium_source_url", window.location.hash)} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg text-xs font-bold hover:from-teal-400 transition-all">
+                          <ArrowRight className="w-3.5 h-3.5" /> Go to Checkout
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Rank #2 — FULL for premium, BLURRED for guests */}
+            {top3[1] && (
+              <div className={`bg-white rounded-2xl border-2 border-slate-300 shadow-lg overflow-hidden ${!hasPremium ? "relative" : ""}`}>
+                <div className="px-4 py-2 text-xs font-bold text-white font-mono tracking-wider uppercase bg-gradient-to-r from-slate-400 to-slate-600">RANK #2 — STRONG FIT</div>
+                <div className="p-5">
+                  <div className={!hasPremium ? "blur-[5px] opacity-40 pointer-events-none select-none" : ""}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-2xl font-bold text-slate-900">{top3[1].country}</h3>
+                      <div className={`text-3xl font-bold ${scoreColor(top3[1].score)}`}>{top3[1].score.toFixed(1)}<span className="text-sm text-slate-400 font-normal">/10</span></div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <FinRow icon={DollarSign} label="Tuition" value={formatMoney(top3[1].tuition)} />
+                      <FinRow icon={Home} label="Living" value={formatMoney(top3[1].living)} />
+                      <FinRow icon={Wallet} label="Part-Time Earnings" value={formatMoney(top3[1].earnings)} />
+                      <FinRow icon={Target} label="Net Out of Pocket" value={formatMoney(top3[1].netOOP)} highlight />
+                      <FinRow icon={Wallet} label="Ideal Budget" value={`₹${top3[1].idealBudget.toFixed(1)}L`} />
+                      <FinRow icon={TrendingUp} label="Basic ROI" value={formatROI(top3[1].roi)} valueClass={roiColor(top3[1].roi)} />
+                      {top3[1].lifetimeROI && top3[1].lifetimeROI > 0 && (
+                        <FinRow icon={Sparkles} label="Lifetime ROI (10yr)" value={`${top3[1].lifetimeROI}x (₹${top3[1].lifetimeValue.toFixed(0)}L return)`} valueClass={top3[1].lifetimeROI >= 30 ? "text-emerald-600" : top3[1].lifetimeROI >= 15 ? "text-teal-600" : "text-amber-600"} />
+                      )}
+                      <FinRow icon={MapPin} label="Visa Pathway" value={top3[1].visa} />
+                      <FinRow icon={Clock} label="PR Timeline" value={top3[1].pr} />
+                      <div className="flex items-center gap-2 pt-1"><Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" /><span className="text-xs text-slate-500 uppercase font-mono w-16">Job Market</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${jobBg(top3[1].job)}`}>{top3[1].job}</span></div>
+                      {top3[1].workExpBonus > 0 && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <Award className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                          <span className="text-xs text-slate-500 uppercase font-mono w-16">Work Ex Bonus</span>
+                          <span className="text-xs font-bold text-teal-600">+{top3[1].workExpBonus} visa points</span>
+                        </div>
+                      )}
+                      <FinRow icon={DollarSign} label="Salary Range" value={`${top3[1].salaryRange}`} />
+                    </div>
+                  </div>
+                  {!hasPremium && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 p-4 text-center">
+                      <Lock className="w-8 h-8 text-slate-500 mb-2" />
+                      <p className="text-lg font-bold text-slate-900">{top3[1].country}</p>
+                      <p className="text-sm text-teal-700 font-bold mb-1">Score: {top3[1].score.toFixed(1)} / 10</p>
+                      <p className="text-xs text-slate-600 mb-3 max-w-[200px]">Your #2 alternative. Unlock Premium for full details.</p>
+                      {!inCart ? (
+                        <button onClick={() => addItem(PREMIUM_BUNDLE)} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-slate-400 to-slate-500 text-white rounded-lg text-xs font-bold hover:from-slate-300 transition-all">
+                          <ShoppingCart className="w-3.5 h-3.5" /> Unlock — ₹999
+                        </button>
+                      ) : (
+                        <Link to="/checkout" onClick={() => localStorage.setItem("kc_premium_source_url", window.location.hash)} className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-lg text-xs font-bold hover:from-teal-400 transition-all">
+                          <ArrowRight className="w-3.5 h-3.5" /> Go to Checkout
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Rank #3 — FULLY VISIBLE teaser */}
+            {top3[2] && (
+              <div className="bg-white rounded-2xl border-2 border-orange-400 shadow-lg overflow-hidden">
+                <div className="px-4 py-2 text-xs font-bold text-white font-mono tracking-wider uppercase bg-gradient-to-r from-orange-400 to-orange-600">RANK #3 — YOUR PREVIEW</div>
+                <div className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-2xl font-bold text-slate-900">{top3[2].country}</h3>
+                    <div className={`text-3xl font-bold ${scoreColor(top3[2].score)}`}>{top3[2].score.toFixed(1)}<span className="text-sm text-slate-400 font-normal">/10</span></div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <FinRow icon={DollarSign} label="Tuition" value={formatMoney(top3[2].tuition)} />
+                    <FinRow icon={Home} label="Living" value={formatMoney(top3[2].living)} />
+                    <FinRow icon={Wallet} label="Part-Time Earnings" value={formatMoney(top3[2].earnings)} />
+                    <FinRow icon={Target} label="Net Out of Pocket" value={formatMoney(top3[2].netOOP)} highlight />
+                    {/* Ideal Budget with gap indicator */}
+                    {(() => {
+                      const gap = top3[2].idealBudget - budget;
+                      const ratio = budget / top3[2].idealBudget;
+                      const isFeasible = ratio >= 1;
+                      const isClose = ratio >= 0.7;
+                      const colorClass = isFeasible ? "text-emerald-600" : isClose ? "text-amber-600" : "text-red-500";
+                      const bgClass = isFeasible ? "bg-emerald-100" : isClose ? "bg-amber-50" : "bg-red-50";
+                      return (
+                        <div className={`flex items-center gap-2 py-1 px-2 rounded-lg ${bgClass}`}>
+                          <Wallet className={`w-3.5 h-3.5 ${colorClass} shrink-0`} />
+                          <span className="text-xs text-slate-500 uppercase font-mono w-24">Ideal Budget</span>
+                          <div className="flex-1 text-right">
+                            <span className={`text-sm font-bold font-mono ${colorClass}`}>₹{top3[2].idealBudget.toFixed(1)}L</span>
+                            {gap > 0 && <span className={`block text-[9px] font-mono ${isClose ? "text-amber-500" : "text-red-400"}`}>+₹{gap.toFixed(1)}L needed</span>}
+                            {gap <= 0 && <span className="block text-[9px] font-mono text-emerald-500">within your budget</span>}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <FinRow icon={TrendingUp} label="Basic ROI" value={formatROI(top3[2].roi)} valueClass={roiColor(top3[2].roi)} />
+                    {/* Lifetime ROI — the real picture */}
+                    {top3[2].lifetimeROI && top3[2].lifetimeROI > 0 && (
+                      <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <span className="text-xs text-slate-500 uppercase font-mono w-24">Lifetime ROI</span>
+                        <div className="flex-1 text-right">
+                          <span className={`text-sm font-bold font-mono ${
+                            top3[2].lifetimeROI >= 30 ? "text-emerald-600" :
+                            top3[2].lifetimeROI >= 15 ? "text-teal-600" : "text-amber-600"
+                          }`}>
+                            {top3[2].lifetimeROI}x return
+                          </span>
+                          <span className="block text-[9px] text-emerald-500 font-mono">
+                            ₹{top3[2].lifetimeValue.toFixed(0)}L over 10 years
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <FinRow icon={MapPin} label="Visa Pathway" value={top3[2].visa} />
+                    <FinRow icon={Clock} label="PR Timeline" value={top3[2].pr} />
+                    <div className="flex items-center gap-2 pt-1"><Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" /><span className="text-xs text-slate-500 uppercase font-mono w-16">Job Market</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${jobBg(top3[2].job)}`}>{top3[2].job}</span></div>
+                    {top3[2].workExpBonus > 0 && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <Award className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                        <span className="text-xs text-slate-500 uppercase font-mono w-16">Work Ex Bonus</span>
+                        <span className="text-xs font-bold text-teal-600">+{top3[2].workExpBonus} visa points</span>
+                      </div>
+                    )}
+                    <FinRow icon={DollarSign} label="Salary Range" value={`${top3[2].salaryRange}`} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Upgrade CTA for #1 and #2 */}
+          {!hasPremium && (
+            <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-6 text-center mb-6">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+                <Crown className="w-6 h-6 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">See Your #1 and #2 Matches</h3>
+              <p className="text-sm text-slate-600 max-w-md mx-auto mb-4">
+                Your top 2 destinations are hidden. They're likely better fits with higher ROI. 
+                Unlock to see your full ranking and detailed financials.
+              </p>
+              <div className="flex flex-wrap gap-3 justify-center">
+                <Link to="/login" className="inline-flex items-center gap-2 px-6 py-2.5 bg-teal-600 text-white rounded-xl font-semibold text-sm hover:bg-teal-700 transition-colors">
+                  <Users className="w-4 h-4" /> Sign In Free <ArrowRight className="w-4 h-4" />
+                </Link>
+                {!inCart ? (
+                  <button
+                    onClick={() => addItem(PREMIUM_BUNDLE)}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-900 rounded-xl font-semibold text-sm hover:from-amber-300 transition-colors"
+                  >
+                    <ShoppingCart className="w-4 h-4" /> Add to Cart — ₹999
+                  </button>
+                ) : (
+                  <Link
+                    to="/checkout"
+                    onClick={() => localStorage.setItem("kc_premium_source_url", window.location.hash)}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-xl font-semibold text-sm hover:from-teal-400 transition-colors"
+                  >
+                    <ArrowRight className="w-4 h-4" /> Go to Checkout
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Full Results — Cards on mobile, Table on desktop */}
+          <div className="relative bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden">
+            {/* ─── Mobile Card Layout (< md) ─── */}
+            <div className="md:hidden">
+              <div className="bg-slate-900 px-4 py-3 flex items-center justify-between">
+                <span className="text-xs font-mono tracking-wider uppercase text-slate-300">All {results.length} Countries Ranked</span>
+                <span className="text-[10px] text-slate-500">Scroll to see all</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {results.map(r => {
+                  const destId = COUNTRY_TO_ID[r.country];
+                  return (
+                    <div key={r.country} className="p-4 hover:bg-teal-50/30 transition-colors">
+                      {/* Top row: Rank + Country + Score */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="w-7 h-7 rounded-full bg-teal-50 flex items-center justify-center text-sm font-bold text-teal-600">{r._rank}</span>
+                          {destId ? (
+                            <Link to={`/destinations/${destId}`} className="text-base font-bold text-slate-900 hover:text-teal-600 transition-colors">{r.country}</Link>
+                          ) : (
+                            <span className="text-base font-bold text-slate-900">{r.country}</span>
+                          )}
+                        </div>
+                        <span className={`text-lg font-bold ${scoreColor(r.score)}`}>{r.score.toFixed(1)}<span className="text-xs text-slate-400 font-normal">/10</span></span>
+                      </div>
+                      {/* Key metrics grid */}
+                      {(() => {
+                        const gap = r.idealBudget - budget;
+                        const ratio = budget / r.idealBudget;
+                        const isFeasible = ratio >= 1;
+                        const isClose = ratio >= 0.7;
+                        return (
+                          <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="bg-slate-50 rounded-lg p-2 text-center">
+                              <div className="text-[10px] text-slate-400 uppercase">Net OOP</div>
+                              <div className="text-sm font-bold font-mono text-teal-700">₹{r.netOOP.toFixed(1)}L</div>
+                            </div>
+                            <div className={`rounded-lg p-2 text-center ${isFeasible ? "bg-emerald-100" : isClose ? "bg-amber-100" : "bg-red-100"}`}>
+                              <div className={`text-[10px] uppercase font-semibold ${isFeasible ? "text-emerald-500" : isClose ? "text-amber-500" : "text-red-400"}`}>Ideal Budget</div>
+                              <div className={`text-sm font-bold font-mono ${isFeasible ? "text-emerald-600" : isClose ? "text-amber-600" : "text-red-500"}`}>₹{r.idealBudget.toFixed(1)}L</div>
+                              {gap > 0 && (
+                                <div className={`text-[9px] font-mono mt-0.5 ${isClose ? "text-amber-500" : "text-red-400"}`}>+₹{gap.toFixed(1)}L</div>
+                              )}
+                              {gap <= 0 && (
+                                <div className="text-[9px] font-mono text-emerald-500 mt-0.5">within budget</div>
+                              )}
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-2 text-center">
+                              <div className="text-[10px] text-slate-500 uppercase">Salary Range</div>
+                              <div className="text-sm font-bold font-mono text-slate-700">{r.salaryRange}</div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {/* Secondary metrics row */}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+                        <span className="text-xs text-slate-500">Tuition: <span className="font-mono text-slate-700">₹{r.tuition.toFixed(1)}L</span></span>
+                        <span className="text-xs text-slate-500">Living: <span className="font-mono text-slate-700">₹{r.living.toFixed(1)}L</span></span>
+                        <span className="text-xs text-slate-500">Safety: <span className={`font-mono ${r.safety >= 85 ? "text-emerald-600" : r.safety >= 70 ? "text-amber-600" : "text-red-500"}`}>{r.safety}</span></span>
+                        <span className="text-xs text-slate-500">Visa: <span className="font-mono text-blue-600">{r.visaEase}/10</span></span>
+                        <span className="text-xs text-slate-500">PR: <span className="font-mono text-violet-600">{r.prScore}/10</span></span>
+                        <span className="text-xs text-slate-500">Jobs: <span className="font-mono text-slate-700">{r.jobNumeric}/10</span></span>
+                        {r.lifetimeROI && r.lifetimeROI > 0 && (
+                          <span className={`text-xs font-semibold font-mono ${
+                            r.lifetimeROI >= 30 ? "text-emerald-400" :
+                            r.lifetimeROI >= 15 ? "text-teal-400" : "text-amber-400"
+                          }`}>
+                            Lifetime: {r.lifetimeROI}x
+                          </span>
+                        )}
+                        {r.workExpBonus > 0 && (
+                          <span className="text-xs text-teal-600 font-semibold">Work Ex: +{r.workExpBonus}pts</span>
+                        )}
+                      </div>
+                      {/* CTA row */}
+                      <div className="flex flex-wrap gap-2">
+                        {destId && (
+                          <>
+                            <button
+                              onClick={() => {
+                                const allRecs = getCourseRecommendations(courseType, level, major);
+                                const countryRecs = allRecs.filter(p => p.topCountries.includes(r.country));
+                                setCourseModal({ country: r.country, programs: countryRecs.length > 0 ? countryRecs : allRecs.slice(0, 3) });
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-violet-50 text-violet-700 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              <BookOpen className="w-3.5 h-3.5" /> Courses
+                            </button>
+                            <button
+                              onClick={() => setConsultantModal({ country: r.country, consultants: getConsultantsForCountry(destId) })}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              <Users className="w-3.5 h-3.5" /> Consultants
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ─── Desktop Table (md+) ─── */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full">
+                <thead><tr className="bg-slate-800">
+                  {[
+                    { h: "Rank", sub: "", w: "w-10" },
+                    { h: "Country", sub: "", w: "w-24" },
+                    { h: "Score", sub: "/10", w: "w-16" },
+                    { h: "Tuition", sub: "(₹L)", w: "w-18" },
+                    { h: "Living", sub: "(₹L)", w: "w-18" },
+                    { h: "Earnings", sub: "(₹L)", w: "w-18" },
+                    { h: "Net OOP", sub: "(₹L)", w: "w-18" },
+                    { h: "Ideal Budget", sub: "(₹L)", w: "w-20" },
+                    { h: "ROI", sub: "", w: "w-10" },
+                    { h: "Lifetime ROI", sub: "10yr", w: "w-16" },
+                    { h: "Salary Range", sub: "(₹L/yr)", w: "w-20" },
+                    { h: "Jobs", sub: "/10", w: "w-10" },
+                    { h: "Safety", sub: "/100", w: "w-12" },
+                    { h: "Visa", sub: "/10", w: "w-10" },
+                    { h: "PR", sub: "/10", w: "w-10" },
+                    { h: "Work Ex", sub: "pts", w: "w-12" },
+                    { h: "Courses", sub: "", w: "w-16" },
+                    { h: "Agents", sub: "", w: "w-20" },
+                  ].map(col => (
+                    <th key={col.h} className={`px-2 py-2.5 text-left text-[9px] font-mono tracking-wider uppercase text-slate-300 whitespace-nowrap ${col.w}`}>
+                      <div>{col.h}</div>
+                      {col.sub && <div className="text-slate-500 font-normal normal-case">{col.sub}</div>}
+                    </th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {results.map(r => {
+                    const destId = COUNTRY_TO_ID[r.country];
+                    return (
+                      <tr key={r.country} className="border-b border-slate-700 hover:bg-teal-500/5 transition-colors group">
+                        <td className="px-2 py-2.5 text-sm font-bold text-teal-700">{r._rank}</td>
+                        <td className="px-2 py-2.5 whitespace-nowrap">
+                          {destId ? (
+                            <Link to={`/destinations/${destId}`} className="text-sm font-semibold text-slate-900 hover:text-teal-700 transition-colors flex items-center gap-1">
+                              {r.country}
+                              <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-teal-500" />
+                            </Link>
+                          ) : (
+                            <span className="text-sm font-semibold text-slate-900">{r.country}</span>
+                          )}
+                        </td>
+                        <td className={`px-2 py-2.5 text-sm font-bold ${scoreColor(r.score)}`}>{r.score.toFixed(1)}<span className="text-[10px] text-slate-500 font-normal">/10</span></td>
+                        <td className="px-2 py-2.5 text-xs text-slate-700 font-mono whitespace-nowrap">₹{r.tuition.toFixed(1)}L</td>
+                        <td className="px-2 py-2.5 text-xs text-slate-700 font-mono whitespace-nowrap">₹{r.living.toFixed(1)}L</td>
+                        <td className="px-2 py-2.5 text-xs text-emerald-700 font-mono whitespace-nowrap">+₹{r.earnings.toFixed(1)}L</td>
+                        <td className="px-2 py-2.5 text-xs font-bold font-mono whitespace-nowrap text-teal-700">₹{r.netOOP.toFixed(1)}L</td>
+                        {/* Ideal Budget — the budget needed for zero penalty */}
+                        {(() => {
+                          const gap = r.idealBudget - budget;
+                          const ratio = budget / r.idealBudget;
+                          const isFeasible = ratio >= 1;
+                          const isClose = ratio >= 0.7;
+                          return (
+                            <td className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={`text-xs font-mono font-bold ${isFeasible ? "text-emerald-700" : isClose ? "text-amber-700" : "text-red-600"}`}>
+                                ₹{r.idealBudget.toFixed(1)}L
+                              </span>
+                              {gap > 0 && (
+                                <span className={`block text-[9px] font-mono mt-0.5 ${isClose ? "text-amber-600" : "text-red-500"}`}>
+                                  +₹{gap.toFixed(1)}L needed
+                                </span>
+                              )}
+                              {gap <= 0 && (
+                                <span className="block text-[9px] font-mono text-emerald-700 mt-0.5">
+                                  within budget
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })()}
+                        <td className={`px-2 py-2.5 text-xs font-bold font-mono whitespace-nowrap ${roiColor(r.roi)}`}>{formatROI(r.roi)}</td>
+                        {/* Lifetime ROI — what basic ROI misses */}
+                        <td className="px-2 py-2.5 whitespace-nowrap">
+                          {r.lifetimeROI ? (
+                            <div>
+                              <span className={`text-xs font-bold font-mono ${
+                                r.lifetimeROI >= 30 ? "text-emerald-700" :
+                                r.lifetimeROI >= 15 ? "text-teal-700" :
+                                r.lifetimeROI >= 8 ? "text-amber-700" : "text-slate-600"
+                              }`}>
+                                {r.lifetimeROI}x
+                              </span>
+                              <span className="block text-[8px] text-slate-500 font-mono">
+                                ₹{r.lifetimeValue.toFixed(0)}L return
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2.5 text-xs text-slate-700 font-mono whitespace-nowrap">
+                          <span className="font-bold">{r.salaryRange}</span>
+                          <span className="block text-[8px] text-slate-500">mid-career</span>
+                        </td>
+                        <td className="px-2 py-2.5 text-xs font-mono whitespace-nowrap text-slate-700">{r.jobNumeric}/10</td>
+                        <td className={`px-2 py-2.5 text-xs font-mono whitespace-nowrap ${r.safety >= 85 ? "text-emerald-700" : r.safety >= 70 ? "text-amber-700" : "text-red-600"}`}>{r.safety}</td>
+                        <td className="px-2 py-2.5 text-xs font-mono whitespace-nowrap text-blue-700">{r.visaEase}/10</td>
+                        <td className="px-2 py-2.5 text-xs font-mono whitespace-nowrap text-violet-700">{r.prScore}/10</td>
+                        <td className="px-2 py-2.5 text-xs font-mono whitespace-nowrap">
+                          {r.workExpBonus > 0 ? (
+                            <span className="text-teal-700 font-bold">+{r.workExpBonus}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2.5 whitespace-nowrap">
+                          {destId && (
+                            <button
+                              onClick={() => {
+                                const allRecs = getCourseRecommendations(courseType, level, major);
+                                const countryRecs = allRecs.filter(p => p.topCountries.includes(r.country));
+                                setCourseModal({ country: r.country, programs: countryRecs.length > 0 ? countryRecs : allRecs.slice(0, 3) });
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold bg-violet-50 text-violet-700 hover:bg-violet-100 px-2 py-1 rounded-lg transition-colors"
+                            >
+                              <BookOpen className="w-3 h-3" /> Courses
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-2 py-2.5 whitespace-nowrap">
+                          {destId && (
+                            <button
+                              onClick={() => setConsultantModal({ country: r.country, consultants: getConsultantsForCountry(destId) })}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 px-2 py-1 rounded-lg transition-colors"
+                            >
+                              <Users className="w-3 h-3" /> View Agents
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* Blur overlay for non-premium */}
+            {!hasPremium && (
+              <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/70 to-white/40 backdrop-blur-[4px] flex flex-col items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-teal-100 to-teal-200 flex items-center justify-center mb-4">
+                  <Table2 className="w-8 h-8 text-teal-600" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">19 Countries Compared</h3>
+                <p className="text-sm text-slate-600 max-w-md mx-auto mb-2 text-center">
+                  Your complete ranking across all 19 destinations. All amounts in ₹ Lakhs. Score is out of 10.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mb-5 max-w-lg">
+                  {["Tuition","Living","Earnings","Net OOP","ROI","Salary","Jobs","Safety","Visa","PR"].map(tag => (
+                    <span key={tag} className="flex items-center gap-1 text-[10px] text-slate-500"><CheckCircle2 className="w-2.5 h-2.5 text-teal-500" />{tag}</span>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-3 justify-center">
+                  {!inCart ? (
+                    <button
+                      onClick={() => addItem(PREMIUM_BUNDLE)}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-xl font-semibold text-sm hover:from-amber-400 shadow-lg shadow-amber-500/25 transition-all"
+                    >
+                      <ShoppingCart className="w-4 h-4" /> Add to Cart — ₹999
+                    </button>
+                  ) : (
+                    <Link
+                      to="/checkout"
+                      onClick={() => localStorage.setItem("kc_premium_source_url", window.location.hash)}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-xl font-semibold text-sm hover:from-teal-400 shadow-lg shadow-teal-500/25 transition-all"
+                    >
+                      <ArrowRight className="w-4 h-4" /> Go to Checkout
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+        </>
+      )}
+      </>)}
+
+      {/* How Calculations Work */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-6">
+            <h2 className="text-3xl font-bold text-slate-900 mb-2">How We Calculate Everything</h2>
+            <p className="text-slate-600">Click any card to see a worked example.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <InfoCard icon={DollarSign} title="Tuition" color="blue" formula="STEM Baseline × Stream Multiplier"
+              explain="Every country has a STEM baseline. Your major applies a multiplier — Medicine ~1.8x, Arts ~0.8x."
+              example="Germany STEM: ₹1L × 1.0 = ₹1L (public uni). USA STEM: ₹35L × 1.0 = ₹35L. Medicine: 1.8× multiplier everywhere." />
+            <InfoCard icon={Home} title="Living Cost" color="amber" formula="Per Year × Duration (+10%/yr inflation)"
+              explain="Living costs increase 10% every year (rent, food, transport inflation). Year 1 = base, Year 2 = +10%, Year 3 = +21%, Year 4 = +33%."
+              example="Canada: ₹13L + ₹14.3L + ₹15.7L + ₹17.3L = ₹60.3L total (not ₹52L flat). This makes budgets more realistic." />
+            <InfoCard icon={Wallet} title="Part-Time Earnings" color="emerald" formula="Earn/Year × Duration"
+              explain="Based on local minimum wage and legal work hours (10-20 hrs/week). Longer courses = more total earnings."
+              example="Canada: ₹10.8L/yr × 4 yrs = ₹43.2L total earnings over the course." />
+            <InfoCard icon={Target} title="Net Out-of-Pocket" color="teal" formula="Tuition + Inflated Living − Earnings"
+              explain="The real number your family pays. Living costs include 10% annual inflation. This is what your budget and Ideal Budget are compared against."
+              example="Tuition ₹30L + Living ₹60L (with 10%/yr inflation) − Earnings ₹43L = Net OOP ₹47L. Higher but more realistic." />
+            <InfoCard icon={Banknote} title="Ideal Budget" color="cyan" formula="Net OOP × 1.2"
+              explain="The budget you need for zero budget penalty — Net OOP plus 20% comfort buffer. Green = within reach, Amber = close, Red = gap."
+              example="Net OOP ₹39L × 1.2 = ₹46.8L Ideal Budget. If you have ₹35L, you are in the amber zone — doable with adjustments." />
+            <InfoCard icon={Briefcase} title="Work Experience" color="orange" formula="Visa Points Bonus"
+              explain="Your work experience adds visa/PR points in countries like Canada, Australia, Germany. More experience = higher score."
+              example="4 years experience in Canada: +8 visa points. MBA without experience gets a penalty since top B-schools require 2+ years." />
+            <InfoCard icon={TrendingUp} title="3-Year ROI" color="rose" formula="3-Year Salary ÷ Net OOP"
+              explain="How fast you recover investment from 3 years of mid-level salary. More realistic than 1-year. Does not include long-term growth."
+              example="3× ₹55L = ₹165L ÷ Net OOP ₹25L = 6.6x. You recover investment within 6 months of your 3rd year." />
+            <InfoCard icon={Sparkles} title="Lifetime ROI" color="emerald" formula="10yr Value ÷ Net OOP"
+              explain="The REAL picture. Includes 10-year salary growth, healthcare savings, free education for kids, and PR pathway value."
+              example="Canada: ₹126L earnings + ₹40L healthcare + ₹35L education + ₹15L PR value = ₹216L ÷ ₹25L Net OOP = 53x return." />
+            <InfoCard icon={DollarSign} title="Salary Range" color="amber" formula="Entry → Mid → Senior"
+              explain="We show salary as a range (₹38–85L for Canada) not a single number. Bonus uses entry-level salary (conservative). Scoring uses senior-level for long-term value."
+              example="USA: ₹50L entry → ₹85L mid → ₹150L senior. Bonus: +0.4 for ₹50L+ entry. Canada: ₹38L → ₹55L → ₹85L. Bonus: +0.25." />
+            <InfoCard icon={Clock} title="UG Budget Scaling" color="indigo" formula="Budget × 1.6 for UG"
+              explain="UG courses cost ~60% more (4 years vs 2). We scale your budget expectation so UG courses are not unfairly penalized."
+              example="You enter ₹30L budget for UG. We compare against ₹48L adjusted budget — so USA UG does not get a harsh penalty." />
+            <InfoCard icon={Shield} title="PR Pathway Weighting" color="violet" formula="PR Score × Your Priority"
+              explain="PR importance is weighted by YOUR priority. High PR priority = full weight. Low priority = 30% weight. USA scores better if PR is not your focus."
+              example="PR Priority = Low: USA's PR score of 4/10 only contributes 30%. Priority = High: Canada PR 9/10 gets full 100% weight." />
+            <InfoCard icon={Star} title="Final Match Score" color="teal" formula="Base + All Bonuses − All Penalties"
+              explain="Combines everything: budget fit (with 10% COL inflation), IELTS, academics, safety, visa ease, salary range (entry→senior), 3-year ROI, lifetime value, work experience, PR pathway weighting."
+              example="Canada: Base 5.4 + Entry Salary 0.25 + Lifetime 0.6 + Visa 0.36 + Safety 0.3 − Budget 0 = ~7.1. USA Low PR priority: ~6.5 despite higher salary." />
+          </div>
+        </div>
+      </section>
+
+      {/* Tips + Counsellor CTA */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-gradient-to-br from-teal-600 to-teal-700 rounded-2xl p-6 shadow-lg text-white">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center"><Lightbulb className="w-4 h-4" /></div>
+              <h3 className="text-sm font-bold font-mono tracking-wider uppercase">Reading Your Results</h3>
+            </div>
+            <div className="space-y-3 text-sm leading-relaxed">
+              <p className="border-l-2 border-amber-400 pl-3"><strong>Net OOP is the real number.</strong> It is what your family pays after part-time earnings. Negative = you earn more than you spend.</p>
+              <p className="border-l-2 border-amber-400 pl-3"><strong>ROI above 1x = recover costs in year one.</strong> 3x ROI = every ₹1 invested returns ₹3 per year.</p>
+              <p className="border-l-2 border-amber-400 pl-3"><strong>Always compare both tracks.</strong> Government universities often cost 50-70% less than Private.</p>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-6 shadow-lg text-white">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center"><Users className="w-4 h-4" /></div>
+              <h3 className="text-sm font-bold font-mono tracking-wider uppercase">Need Help Deciding?</h3>
+            </div>
+            <p className="text-sm leading-relaxed mb-4">A certified counsellor can walk you through your top countries, check scholarships, and build your application timeline.</p>
+            <div className="space-y-2 mb-4">
+              <p className="text-sm italic border-l-2 border-white/40 pl-3 opacity-90">&ldquo;Your Net OOP in Germany is only ₹5L after earnings — 90% cheaper than USA for the same STEM degree.&rdquo;</p>
+              <p className="text-sm italic border-l-2 border-white/40 pl-3 opacity-90">&ldquo;With IELTS 7 and 80% academics, you qualify for TU9 elite universities.&rdquo;</p>
+            </div>
+            {!inCart ? (
+              <button
+                onClick={() => addItem(PREMIUM_BUNDLE)}
+                className="inline-flex items-center gap-2 px-5 py-3 bg-white text-amber-700 rounded-xl font-bold text-sm hover:bg-amber-50 transition-colors shadow-md"
+              >
+                <ShoppingCart className="w-4 h-4" /> Add to Cart — ₹999 <ArrowRight className="w-4 h-4" />
+              </button>
+            ) : (
+              <Link
+                to="/checkout"
+                onClick={() => localStorage.setItem("kc_premium_source_url", window.location.hash)}
+                className="inline-flex items-center gap-2 px-5 py-3 bg-white text-teal-700 rounded-xl font-bold text-sm hover:bg-teal-50 transition-colors shadow-md"
+              >
+                <ArrowRight className="w-4 h-4" /> Go to Checkout
+              </Link>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Consultant Contact Modal */}
+      {consultantModal && (
+        <ConsultantModal
+          country={consultantModal.country}
+          consultants={consultantModal.consultants}
+          onClose={() => setConsultantModal(null)}
+        />
+      )}
+
+      {/* Course Recommendation Modal */}
+      {courseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setCourseModal(null)}>
+          <div className="bg-slate-900 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col border border-slate-700" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-700 p-4 flex items-center justify-between shrink-0 border-b border-slate-700">
+              <div>
+                <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-violet-400" /> Courses in {courseModal.country}
+                </h3>
+                <p className="text-slate-400 text-xs mt-0.5">{courseType || "—"} · {level || "—"} · {MAJOR_LABEL[major] || "—"}</p>
+              </div>
+              <button onClick={() => setCourseModal(null)} className="w-8 h-8 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Course List */}
+            <div className="overflow-y-auto flex-1 p-4 space-y-3 bg-slate-900">
+              {/* ─── VOCATIONAL MODE: Show real vocational colleges & courses ─── */}
+              {courseType === "Vocational" && hasVocationalData(courseModal.country) && (
+                <div className="space-y-4">
+                  {/* Vocational Summary Header */}
+                  <div className="bg-gradient-to-br from-amber-400/10 to-orange-400/10 border border-amber-400/20 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <h4 className="text-sm font-bold text-amber-300">Vocational Courses (PR Pathways)</h4>
+                    </div>
+                    <p className="text-xs text-amber-400/70">
+                      Diploma & certificate programs at real colleges with verified PR pathways.
+                      Costs include tuition only — living extra.
+                    </p>
+                  </div>
+
+                  {/* Vocational Courses by College */}
+                  {getVocationalColleges(courseModal.country).map((college, ci) => (
+                    <div key={ci} className="border border-slate-200 rounded-xl overflow-hidden">
+                      {/* College Header */}
+                      <div className="bg-slate-800/60 px-4 py-3 border-b border-slate-700">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h5 className="text-sm font-bold text-white">{college.name}</h5>
+                            <p className="text-[10px] text-slate-400">{college.location} &middot; {college.type}</p>
+                          </div>
+                          <span className="text-[9px] text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full border border-slate-600">{college.courses.length} courses</span>
+                        </div>
+                      </div>
+                      {/* Courses */}
+                      <div className="divide-y divide-slate-100">
+                        {college.courses.map((course, coi) => (
+                          <div key={coi} className="p-4 hover:bg-teal-500/5 transition-colors">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold text-white">{course.name}</span>
+                                  {course.prFriendly && (
+                                    <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold whitespace-nowrap border border-emerald-500/20">PR FRIENDLY</span>
+                                  )}
+                                  <span className="text-[8px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-bold border border-violet-500/20">{course.category}</span>
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full shrink-0 ml-2">{course.duration}</span>
+                            </div>
+                            {/* Course Details Grid */}
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-2">
+                              <span className="text-[10px] text-slate-400">Tuition: <span className="font-semibold text-slate-200">{course.tuition}</span></span>
+                              <span className="text-[10px] text-slate-400">Intake: <span className="font-semibold text-slate-200">{course.intake}</span></span>
+                              <span className="text-[10px] text-slate-400">Campus: <span className="font-semibold text-slate-200">{course.campus}</span></span>
+                              <span className="text-[10px] text-slate-400">Salary: <span className="font-semibold text-emerald-400">{course.avgSalary}</span></span>
+                            </div>
+                            {/* PR Pathway */}
+                            <div className="bg-teal-500/10 rounded-lg px-3 py-1.5 mb-1.5 border border-teal-500/15">
+                              <span className="text-[10px] text-teal-400 font-semibold">PR Pathway: </span>
+                              <span className="text-[10px] text-teal-300">{course.prPathway}</span>
+                            </div>
+                            {/* NOC Code if available */}
+                            {course.nocCode && (
+                              <span className="text-[9px] text-slate-400 font-mono">NOC: {course.nocCode}</span>
+                            )}
+                            {/* Requirements */}
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              <span className="font-semibold">Entry:</span> {course.requirements}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ─── ACADEMIC MODE: Show trending degree courses ─── */}
+              {courseType === "Academic" && (() => {
+                const recs = getTrendingCourses(courseModal.country, level, major);
+                if (recs.length === 0) return null;
+                return (
+                  <div className="bg-gradient-to-br from-[#0d9488]/10 to-[#14b8a6]/10 border border-[#0d9488]/20 rounded-xl p-4 mb-2">
+                    <div className="flex items-center gap-2 mb-3">
+                      <TrendingUp className="w-4 h-4 text-[#0d9488]" />
+                      <h4 className="text-sm font-bold text-white">Trending Courses for Indian Students</h4>
+                    </div>
+                    <div className="space-y-2">
+                      {recs.slice(0, 5).map((rec, ri) => (
+                        <div key={ri} className="flex items-start gap-2.5">
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                            ri === 0 ? "bg-amber-400/20 text-amber-400" :
+                            ri === 1 ? "bg-slate-600/50 text-slate-300" :
+                            ri === 2 ? "bg-orange-400/20 text-orange-400" :
+                            "bg-slate-700 text-slate-400"
+                          }`}>
+                            {ri + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-white">{rec.course}</span>
+                              {rec.prFriendly && (
+                                <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/20">PR FRIENDLY</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-slate-400">Avg Salary: <span className="font-semibold text-slate-200">{rec.avgSalary}</span></span>
+                            </div>
+                            {rec.notes && <p className="text-[10px] text-slate-400 mt-0.5">{rec.notes}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-[#0d9488]/10 flex items-center gap-1.5 text-[10px] text-slate-400">
+                      <BookOpen className="w-3 h-3" />
+                      <span>Data from Open Doors, HESA, DAAD, HEA, Campus France, Austrade 2024</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Universities where Indian students actually enrolled */}
+              {(() => {
+                const enrollmentData = getEnrollmentByCountry(courseModal.country);
+                const enrolledUnis = enrollmentData?.topUniversities || [];
+                return (
+                  <>
+                    {enrolledUnis.length > 0 && (
+                      <div className="mb-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Users className="w-4 h-4 text-[#0d9488]" />
+                          <h4 className="text-sm font-bold text-white">Universities Chosen by Indian Students</h4>
+                          <span className="text-[9px] text-slate-500">({enrollmentData?.totalIndianStudents || ""} enrolled)</span>
+                        </div>
+                        <div className="space-y-2">
+                          {enrolledUnis.slice(0, 5).map((uni, uIdx) => (
+                            <div key={uIdx} className="bg-slate-800/40 rounded-xl p-3 border border-slate-700 hover:border-[#0d9488]/40 hover:bg-slate-800/60 transition-all">
+                              <div className="flex items-start justify-between mb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-white">{uni.name}</span>
+                                  <Badge className={`text-[8px] ${uni.type === "Public" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-purple-500/15 text-purple-400 border-purple-500/30"}`}>
+                                    {uni.type}
+                                  </Badge>
+                                </div>
+                                {uni.qsRanking && uni.qsRanking !== "N/A" && (
+                                  <span className="text-[9px] font-mono text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">{uni.qsRanking}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="text-[10px] text-[#0d9488] font-semibold flex items-center gap-1">
+                                  <Users className="w-3 h-3" /> {uni.indianStudents}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {uni.popularCourses.slice(0, 4).map((course, ci) => (
+                                  <span key={ci} className="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+                                    {course}
+                                  </span>
+                                ))}
+                              </div>
+                              {uni.notes && (
+                                <p className="text-[9px] text-slate-500 mt-1.5 italic">{uni.notes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {enrollmentData && (
+                          <div className="flex items-center gap-1.5 text-[9px] text-slate-500 mt-2 pt-2 border-t border-slate-700">
+                            <BookOpen className="w-2.5 h-2.5" />
+                            <span>Source: {enrollmentData.source} · {enrollmentData.year}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Course Recommendations */}
+                    {courseModal.programs.map((p, idx) => (
+                      <div key={idx} className="border border-slate-700 rounded-xl p-4 hover:border-violet-500/30 hover:bg-slate-800/40 transition-all bg-slate-800/20">
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-bold text-white text-sm">{p.name}</h4>
+                          <span className="text-[10px] font-mono text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full shrink-0 ml-2 border border-slate-600">{p.duration}</span>
+                        </div>
+                        <p className="text-xs text-slate-400 mb-2 leading-relaxed">{p.desc}</p>
+                        <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold bg-emerald-500/10 rounded-lg px-3 py-1 border border-emerald-500/15">
+                          <Briefcase className="w-3.5 h-3.5" />
+                          {p.career}
+                        </div>
+                      </div>
+                    ))}
+
+                    {courseModal.programs.length === 0 && enrolledUnis.length === 0 && (
+                      <div className="text-center py-8">
+                        <BookOpen className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                        <p className="text-slate-400 text-sm">No specific data available for this combination yet.</p>
+                        <p className="text-slate-500 text-xs mt-1">Select Course Type, Level and Major to see recommendations.</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 p-3 border-t border-slate-700 bg-slate-800/50 text-center">
+              <p className="text-[10px] text-slate-500">Explore more on the <Link to="/courses" onClick={() => setCourseModal(null)} className="text-violet-400 hover:text-violet-300">Courses page</Link></p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Footer />
+    </div>
+  );
+}
+
+/* ---- Sub-components (inline to avoid module issues) ---- */
+function Field({ label, children, required = false }: { label: string; children: React.ReactNode; required?: boolean }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[11px] font-mono tracking-wider uppercase text-slate-500 font-semibold">
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function StepCard({ num, icon: Icon, title, desc }: { num: string; icon: any; title: string; desc: string }) {
+  return (
+    <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="w-6 h-6 rounded-full bg-teal-500/20 border border-teal-500/40 text-teal-400 text-[10px] font-bold flex items-center justify-center font-mono">{num}</span>
+        <Icon className="w-4 h-4 text-amber-400" />
+      </div>
+      <h4 className="text-sm font-bold text-white mb-1">{title}</h4>
+      <p className="text-xs text-white/60 leading-relaxed">{desc}</p>
+    </div>
+  );
+}
+
+function FinRow({ icon: Icon, label, value, highlight, valueClass }: { icon: any; label: string; value: string; highlight?: boolean; valueClass?: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      <span className="text-xs text-slate-500 uppercase font-mono tracking-wider w-16 shrink-0">{label}</span>
+      <span className={`text-sm font-semibold ${highlight ? "text-teal-700" : valueClass || "text-slate-800"}`}>{value}</span>
+    </div>
+  );
+}
+
+const COLOR_MAP: Record<string, { bg: string; border: string; icon: string; badge: string }> = {
+  blue:    { bg: "bg-blue-50",    border: "border-blue-200",    icon: "bg-blue-100 text-blue-600",    badge: "bg-blue-100 text-blue-700" },
+  amber:   { bg: "bg-amber-50",   border: "border-amber-200",   icon: "bg-amber-100 text-amber-600",  badge: "bg-amber-100 text-amber-700" },
+  emerald: { bg: "bg-emerald-50", border: "border-emerald-200", icon: "bg-emerald-100 text-emerald-600", badge: "bg-emerald-100 text-emerald-700" },
+  teal:    { bg: "bg-teal-50",    border: "border-teal-200",    icon: "bg-teal-100 text-teal-600",    badge: "bg-teal-100 text-teal-700" },
+  rose:    { bg: "bg-rose-50",    border: "border-rose-200",    icon: "bg-rose-100 text-rose-600",    badge: "bg-rose-100 text-rose-700" },
+  violet:  { bg: "bg-violet-50",  border: "border-violet-200",  icon: "bg-violet-100 text-violet-600",  badge: "bg-violet-100 text-violet-700" },
+};
+
+function InfoCard({ icon: Icon, title, color, formula, explain, example }: { icon: any; title: string; color: string; formula: string; explain: string; example: string }) {
+  const [open, setOpen] = useState(false);
+  const c = COLOR_MAP[color];
+  return (
+    <div className={`rounded-2xl border p-5 ${c.bg} ${c.border} hover:shadow-md transition-shadow cursor-pointer`} onClick={() => setOpen(!open)}>
+      <div className="flex items-center gap-3 mb-3">
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${c.icon}`}><Icon className="w-4 h-4" /></div>
+        <div><h4 className="text-sm font-bold text-slate-900">{title}</h4><span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${c.badge}`}>{formula}</span></div>
+      </div>
+      <p className="text-sm text-slate-700 leading-relaxed">{explain}</p>
+      {open && <div className="mt-3 pt-3 border-t border-dashed border-slate-300">
+        <p className="text-xs text-slate-600 leading-relaxed"><strong className="text-slate-800">Example:</strong> {example}</p>
+      </div>}
+      <div className="mt-2 text-xs font-semibold text-slate-500 hover:text-slate-700">{open ? "Hide example" : "See example"}</div>
+    </div>
+  );
+}

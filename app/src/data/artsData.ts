@@ -1,0 +1,97 @@
+import type { SubjectData } from "@/pages/SubjectLanding";
+
+const artsData: SubjectData = {
+  icon: "arts",
+  title: "Arts",
+  subtitle: "Humanities, Design, Media, Psychology & Liberal Arts",
+  heroImage: "https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&q=80",
+  whyAbroad: [
+    "Arts & humanities degrees from top global universities carry massive prestige in India",
+    "Design, Psychology, and Media are among the fastest-growing fields globally",
+    "Creative industries abroad pay 5-10x more than Indian creative salaries",
+    "Many arts programs have lower tuition fees than STEM — great ROI",
+    "PR pathways exist for teachers, designers, psychologists, and media professionals",
+  ],
+  framework: [
+    { s: "1", l: "Choose Your Creative Path", d: "Design, Psychology, Journalism, Film, Fine Arts, Liberal Arts" },
+    { s: "2", l: "Set Your Budget", d: "10L to 1Cr — UK has 1-year MAs, USA has top-ranked programs" },
+    { s: "3", l: "Pick Your Country", d: "UK for 1-year MA, USA for research, Italy for design, Australia for PR" },
+    { s: "4", l: "Build Your Portfolio", d: "Arts programs value portfolio over test scores" },
+    { s: "5", l: "PR Pathway", d: "Teaching, design, psychology on shortage lists in many countries" },
+  ],
+  programs: [
+    {
+      id: "ba",
+      title: "BA (Liberal Arts / Humanities)",
+      level: "UG",
+      duration: "3-4 Years",
+      avgTuition: "8-40L/year",
+      description: "Liberal Arts is the fastest-growing UG choice for Indian students going abroad. Unlike India's rigid BA, US/UK liberal arts lets you explore multiple subjects before choosing a major. Top colleges: Harvard, Yale, Oxford, Ashoka (India).",
+      whoFor: ["Not sure what to specialise in yet", "Want broad, interdisciplinary education", "Planning for civil services, law, or MBA later", "Strong writing, communication, and critical thinking skills"],
+      eligibility: ["12th any stream (75%+ for top schools)", "SAT (USA) / personal statement (UK)", "IELTS 6.5+ / TOEFL 90+", "Strong extracurricular profile"],
+      countries: [
+        { name: "USA", tuition: "25-55K/yr", salary: "45-65K", exam: "None", pr: "OPT 1yr → H-1B" },
+        { name: "UK", tuition: "15-30K/yr", salary: "25-40K", exam: "None", pr: "Graduate Route 2yr" },
+        { name: "Canada", tuition: "12-25K/yr", salary: "40-55K", exam: "None", pr: "PGWP → Express Entry" },
+        { name: "Australia", tuition: "18-30K/yr", salary: "45-60K", exam: "None", pr: "PSWV 2-4yr" },
+        { name: "Singapore", tuition: "12-20K/yr", salary: "35-50K", exam: "None", pr: "Employment Pass → PR" },
+      ],
+      careers: [
+        { role: "Content Strategist", usa: "$60-95K", uk: "25-45K", canada: "CAD 55-85K", aus: "AUD 60-90K" },
+        { role: "Policy Analyst", usa: "$55-85K", uk: "28-45K", canada: "CAD 50-80K", aus: "AUD 55-85K" },
+        { role: "Teacher / Lecturer", usa: "$50-75K", uk: "25-40K", canada: "CAD 45-70K", aus: "AUD 50-75K" },
+        { role: "Journalist", usa: "$45-70K", uk: "22-40K", canada: "CAD 42-65K", aus: "AUD 45-70K" },
+      ],
+      licensing: [],
+    },
+    {
+      id: "design",
+      title: "Design (UI/UX, Graphic, Fashion, Interior)",
+      level: "UG/PG",
+      duration: "1-4 Years",
+      avgTuition: "12-50L/year",
+      description: "Design is one of the highest-paying creative careers. UI/UX designers earn $80-150K in the USA. Fashion design in Italy, Parsons (USA) leads globally. Portfolio matters more than test scores.",
+      whoFor: ["Creative, visual thinkers", "Strong portfolio (digital or physical)", "Want high-paying creative career", "Interest in technology + aesthetics"],
+      eligibility: ["12th pass (UG) / Bachelor's (PG)", "Portfolio (most important)", "IELTS 6.0+", "Some require entrance test / interview"],
+      countries: [
+        { name: "USA (Parsons, RISD)", tuition: "30-50K/yr", salary: "65-120K", exam: "None", pr: "OPT → H-1B" },
+        { name: "UK (RCA, UAL)", tuition: "20-35K/yr", salary: "30-55K", exam: "None", pr: "Global Talent Visa" },
+        { name: "Italy (Polimi, Domus)", tuition: "8-20K/yr", salary: "25-45K", exam: "None", pr: "Job seeker visa" },
+        { name: "Australia", tuition: "20-30K/yr", salary: "55-85K", exam: "None", pr: "MLTSSL" },
+      ],
+      careers: [
+        { role: "UI/UX Designer", usa: "$80-150K", uk: "35-65K", canada: "CAD 70-120K", aus: "AUD 80-130K" },
+        { role: "Product Designer", usa: "$90-160K", uk: "40-70K", canada: "CAD 80-130K", aus: "AUD 90-140K" },
+        { role: "Graphic Designer", usa: "$50-80K", uk: "22-40K", canada: "CAD 45-70K", aus: "AUD 50-75K" },
+        { role: "Fashion Designer", usa: "$55-100K", uk: "25-55K", canada: "CAD 50-85K", aus: "AUD 55-95K" },
+        { role: "Interior Designer", usa: "$55-85K", uk: "25-45K", canada: "CAD 50-80K", aus: "AUD 55-85K" },
+      ],
+      licensing: [],
+    },
+    {
+      id: "psychology",
+      title: "Psychology (Clinical, Counselling, Organisational)",
+      level: "UG/PG",
+      duration: "2-6 Years",
+      avgTuition: "10-45L/year",
+      description: "Mental health awareness is driving massive demand for psychologists. Clinical psychologists earn $80-120K in USA/Canada. Counselling psychology is a fast PR pathway in Australia and Canada.",
+      whoFor: ["Empathetic, good listeners", "Interest in human behaviour", "Want to help people", "Long-term education commitment (PhD for Clinical)"],
+      eligibility: ["12th any stream (UG) / Bachelor's in Psychology (PG)", "GRE (USA PG programs)", "IELTS 6.5+", "PhD required for Clinical Psychology license"],
+      countries: [
+        { name: "USA", tuition: "25-50K/yr", salary: "70-120K", exam: "None", pr: "OPT → H-1B" },
+        { name: "Canada", tuition: "15-30K/yr", salary: "65-100K", exam: "None", pr: "Express Entry" },
+        { name: "UK", tuition: "15-30K/yr", salary: "35-60K", exam: "None", pr: "Skilled Worker" },
+        { name: "Australia", tuition: "20-35K/yr", salary: "60-90K", exam: "None", pr: "MLTSSL" },
+      ],
+      careers: [
+        { role: "Clinical Psychologist", usa: "$80-130K", uk: "40-70K", canada: "CAD 75-120K", aus: "AUD 85-130K" },
+        { role: "Counselling Psychologist", usa: "$65-100K", uk: "35-60K", canada: "CAD 65-100K", aus: "AUD 75-110K" },
+        { role: "Organisational Psychologist", usa: "$90-140K", uk: "40-70K", canada: "CAD 85-130K", aus: "AUD 95-140K" },
+        { role: "School Counsellor", usa: "$55-85K", uk: "28-50K", canada: "CAD 55-85K", aus: "AUD 65-95K" },
+      ],
+      licensing: [],
+    },
+  ],
+};
+
+export default artsData;

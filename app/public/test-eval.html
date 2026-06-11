@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><title>Debug Evaluate</title></head>
+<body>
+<h1>Debug Evaluate Loading</h1>
+<div id="log"></div>
+<script>
+function log(msg) {
+  console.log(msg);
+  document.getElementById('log').innerHTML += '<p>' + msg + '</p>';
+}
+window.onerror = function(msg, url, line) {
+  log('ERROR: ' + msg + ' at ' + url + ':' + line);
+  return true;
+};
+(async () => {
+  try {
+    log('Starting...');
+    log('Loading main...');
+    await import('./assets/main-Bp8YksT0.js');
+    log('Main loaded OK');
+    log('Loading Evaluate...');
+    const start = Date.now();
+    await import('./assets/Evaluate-mc5dw8jq.js');
+    log('Evaluate loaded OK in ' + (Date.now() - start) + 'ms');
+  } catch (e) {
+    log('ERROR: ' + e.message + '<br>Stack: ' + e.stack);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mthz5iw2vxir4.kimi.page/sitemap.xml

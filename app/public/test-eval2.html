@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><title>Debug Evaluate 2</title></head>
+<body>
+<div id="root"></div>
+<script type="module" src="./assets/main-Bp8YksT0.js"></script>
+<script>
+window.onerror = function(msg, url, line) {
+  document.body.innerHTML += '<p style="color:red">ERROR: ' + msg + ' at ' + url + ':' + line + '</p>';
+};
+setTimeout(() => {
+  document.body.innerHTML += '<p>Page loaded. Checking React...</p>';
+  if (window.React) document.body.innerHTML += '<p>React found</p>';
+  if (document.getElementById('root').childNodes.length > 0) {
+    document.body.innerHTML += '<p>Root has children: ' + document.getElementById('root').innerHTML.substring(0, 100) + '</p>';
+  } else {
+    document.body.innerHTML += '<p>Root is empty (React not mounted)</p>';
+  }
+}, 3000);
+</script>
+</body>
+</html>

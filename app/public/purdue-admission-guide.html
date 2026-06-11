@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Purdue University - Complete Admission Guide for Indian Students 2026</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Georgia, "Noto Serif", serif;
+      font-size: 10.5pt;
+      line-height: 1.6;
+      color: #2d3748;
+      text-align: justify;
+      text-align-last: left;
+    }
+
+    @page {
+      size: A4;
+      margin: 2cm 1.8cm;
+      @top-center { content: string(doctitle); font-size: 8.5pt; color: #718096; }
+      @bottom-center { content: counter(page); font-size: 8.5pt; color: #718096; }
+    }
+    @page :first { margin: 0; @top-center { content: none; } @bottom-center { content: none; } }
+    @page cover { @top-center { content: none; } @bottom-center { content: none; } }
+    @page toc { @top-center { content: none; } @bottom-center { content: none; } }
+
+    body { string-set: doctitle ""; }
+    h1 { string-set: doctitle content(); }
+
+    /* ===== COVER ===== */
+    .cover {
+      page: cover;
+      width: 210mm;
+      height: 297mm;
+      margin: 0;
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    }
+    .cover::before {
+      content: '';
+      position: absolute;
+      top: -100px;
+      right: -100px;
+      width: 450px;
+      height: 450px;
+      border: 3px solid rgba(206, 17, 38, 0.2);
+      border-radius: 50%;
+    }
+    .cover::after {
+      content: '';
+      position: absolute;
+      bottom: -80px;
+      left: -80px;
+      width: 350px;
+      height: 350px;
+      border: 2px solid rgba(206, 17, 38, 0.15);
+      border-radius: 50%;
+    }
+    .cover-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(206, 17, 38, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(206, 17, 38, 0.04) 1px, transparent 1px);
+      background-size: 35px 35px;
+    }
+    .cover-accent {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 6mm;
+      background: linear-gradient(90deg, #ce1126, #8b0000, #ce1126);
+    }
+    .cover-badge {
+      position: absolute;
+      top: 40px;
+      right: 40px;
+      background: rgba(206, 17, 38, 0.2);
+      border: 1px solid rgba(206, 17, 38, 0.5);
+      color: #e8b4b8;
+      font-size: 9pt;
+      font-family: system-ui, sans-serif;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 6px 18px;
+      border-radius: 3px;
+    }
+    .cover-content {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      width: 78%;
+      z-index: 10;
+    }
+    .cover-logo {
+      font-size: 11pt;
+      color: #ce1126;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      font-family: system-ui, sans-serif;
+      margin-bottom: 30px;
+    }
+    .cover-title {
+      font-size: 32pt;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.15;
+      margin-bottom: 12px;
+    }
+    .cover-subtitle {
+      font-size: 13pt;
+      color: #94a3b8;
+      margin-bottom: 50px;
+      font-weight: 400;
+    }
+    .cover-year {
+      display: inline-block;
+      background: linear-gradient(135deg, #ce1126, #8b0000);
+      color: white;
+      font-size: 13pt;
+      font-weight: 700;
+      padding: 10px 36px;
+      border-radius: 25px;
+      font-family: system-ui, sans-serif;
+    }
+    .cover-footer {
+      position: absolute;
+      bottom: 50px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      z-index: 10;
+    }
+    .cover-footer p {
+      color: #64748b;
+      font-size: 9pt;
+      font-family: system-ui, sans-serif;
+      margin: 3px 0;
+    }
+    .cover-footer .brand {
+      color: #ce1126;
+      font-size: 11pt;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+
+    /* ===== TOC ===== */
+    .toc-page { page: toc; page-break-after: always; }
+    .toc-title {
+      font-size: 20pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 25px;
+      padding-bottom: 8px;
+      border-bottom: 3px solid #ce1126;
+    }
+    .toc { list-style: none; padding: 0; margin: 0; }
+    .toc li { margin-bottom: 8px; }
+    .toc a {
+      color: #2d3748;
+      text-decoration: none;
+      font-size: 10.5pt;
+      display: flex;
+      align-items: baseline;
+    }
+    .toc a::after {
+      content: leader('.') target-counter(attr(href url), page);
+      flex: 1;
+      text-align: right;
+      color: #718096;
+    }
+    .toc-chapter {
+      font-weight: 700;
+      font-size: 11pt;
+      margin-top: 14px;
+    }
+
+    /* ===== HEADINGS ===== */
+    h1 {
+      font-size: 20pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 0;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 3px solid #ce1126;
+      page-break-before: always;
+    }
+    h1:first-of-type { page-break-before: auto; }
+    h2 {
+      font-size: 13pt;
+      font-weight: 700;
+      color: #8b0000;
+      margin-top: 22px;
+      margin-bottom: 10px;
+      padding-left: 10px;
+      border-left: 4px solid #ce1126;
+    }
+    h3 {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #2d3748;
+      margin-top: 16px;
+      margin-bottom: 6px;
+    }
+
+    /* ===== TABLES ===== */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 9.5pt;
+      max-width: 100%;
+    }
+    thead { border-top: 2.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; }
+    tbody { border-bottom: 2.5px solid #0f172a; }
+    th {
+      padding: 8px 6px;
+      text-align: left;
+      font-weight: 700;
+      color: #0f172a;
+      background: #f8fafc;
+    }
+    td { padding: 7px 6px; vertical-align: top; }
+    tr { page-break-inside: avoid; }
+    tr:nth-child(even) { background: #f8fafc; }
+
+    /* ===== CALLOUTS ===== */
+    .info-box {
+      background: #fef2f2;
+      border-left: 4px solid #ce1126;
+      padding: 12px 16px;
+      margin: 14px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .info-box-title {
+      font-weight: 700;
+      color: #8b0000;
+      margin-bottom: 5px;
+      font-size: 10pt;
+    }
+    .tip-box {
+      background: #f0fdfa;
+      border-left: 4px solid #0d9488;
+      padding: 12px 16px;
+      margin: 14px 0;
+      border-radius: 0 6px 6px 0;
+    }
+    .warning-box {
+      background: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      padding: 12px 16px;
+      margin: 14px 0;
+      border-radius: 0 6px 6px 0;
+    }
+
+    /* ===== STATS ===== */
+    .stats-row {
+      display: flex;
+      gap: 10px;
+      margin: 16px 0;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: linear-gradient(135deg, #fef2f2, #fff);
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+      flex: 1;
+      min-width: 100px;
+      page-break-inside: avoid;
+    }
+    .stat-num {
+      font-size: 16pt;
+      font-weight: 700;
+      color: #ce1126;
+      font-family: system-ui, sans-serif;
+    }
+    .stat-label {
+      font-size: 8pt;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 3px;
+    }
+
+    /* ===== CHECKLIST ===== */
+    .checklist { list-style: none; padding-left: 0; margin: 8px 0; }
+    .checklist li {
+      padding: 5px 0 5px 26px;
+      position: relative;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 10pt;
+    }
+    .checklist li::before {
+      content: '[  ]';
+      position: absolute;
+      left: 0;
+      color: #ce1126;
+      font-weight: 700;
+      font-family: monospace;
+    }
+
+    /* ===== TIMELINE ===== */
+    .timeline-item {
+      display: flex;
+      margin-bottom: 12px;
+      page-break-inside: avoid;
+    }
+    .timeline-phase {
+      width: 80px;
+      flex-shrink: 0;
+      font-weight: 700;
+      color: #ce1126;
+      font-size: 9pt;
+      padding-top: 2px;
+    }
+    .timeline-content {
+      flex: 1;
+      padding-left: 14px;
+      border-left: 2px solid #cbd5e1;
+    }
+
+    /* ===== QUOTE ===== */
+    .quote-block {
+      background: #f8fafc;
+      border-left: 4px solid #ce1126;
+      padding: 14px 18px;
+      margin: 14px 0;
+      font-style: italic;
+      color: #4a5568;
+    }
+    .quote-author {
+      font-style: normal;
+      font-weight: 700;
+      color: #2d3748;
+      margin-top: 8px;
+      font-size: 9.5pt;
+    }
+
+    /* ===== BACK COVER ===== */
+    .back-cover {
+      page-break-before: always;
+      page: cover;
+      width: 210mm;
+      height: 297mm;
+      margin: 0;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      text-align: center;
+    }
+    .back-cover h2 {
+      color: white;
+      font-size: 26pt;
+      border: none;
+      padding: 0;
+      margin-bottom: 16px;
+    }
+    .back-cover p {
+      color: #94a3b8;
+      font-size: 11pt;
+      max-width: 65%;
+    }
+    .back-cover .cta {
+      display: inline-block;
+      background: linear-gradient(135deg, #ce1126, #8b0000);
+      color: white;
+      font-family: system-ui, sans-serif;
+      font-size: 11pt;
+      font-weight: 600;
+      padding: 12px 36px;
+      border-radius: 25px;
+      margin-top: 24px;
+      text-decoration: none;
+    }
+    .back-cover .footer-text {
+      position: absolute;
+      bottom: 45px;
+      color: #64748b;
+      font-size: 9pt;
+    }
+
+    /* ===== UTILITIES ===== */
+    .highlight { background: #fef3c7; padding: 1px 4px; border-radius: 2px; }
+    strong { color: #0f172a; }
+    a { color: #ce1126; text-decoration: none; word-break: break-all; }
+    p { margin: 0 0 8px 0; }
+    ul, ol { margin: 8px 0; padding-left: 22px; }
+    li { margin-bottom: 5px; }
+
+    pre, table, figure, img, svg, blockquote {
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ==================== COVER ==================== -->
+<div class="cover">
+  <div class="cover-grid"></div>
+  <div class="cover-accent"></div>
+  <div class="cover-badge">2026 Edition</div>
+  <div class="cover-content">
+    <div class="cover-logo">Purdue University</div>
+    <div class="cover-title">Complete Admission Guide<br>for Indian Students</div>
+    <div class="cover-subtitle">Programs, Fees, Scholarships, Placements &amp; Campus Life</div>
+    <div class="cover-year">West Lafayette, Indiana, USA</div>
+  </div>
+  <div class="cover-footer">
+    <p class="brand">KOHORTCONNECT</p>
+    <p>Your Study Abroad Admission Partner</p>
+    <p>www.kohortconnect.com</p>
+  </div>
+</div>
+
+<!-- ==================== TOC ==================== -->
+<div class="toc-page">
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc">
+    <li class="toc-chapter"><a href="#sec1">1. Purdue at a Glance</a></li>
+    <li class="toc-chapter"><a href="#sec2">2. Why Choose Purdue?</a></li>
+    <li class="toc-chapter"><a href="#sec3">3. Programs &amp; Courses</a></li>
+    <li><a href="#sec3-1">3.1 MS Aerospace, CS &amp; Mechanical Engineering</a></li>
+    <li class="toc-chapter"><a href="#sec4">4. Eligibility &amp; Requirements</a></li>
+    <li><a href="#sec4-1">4.1 GPA, GRE, IELTS &amp; Documents</a></li>
+    <li class="toc-chapter"><a href="#sec5">5. Application Deadlines</a></li>
+    <li class="toc-chapter"><a href="#sec6">6. Tuition &amp; Cost of Living</a></li>
+    <li><a href="#sec6-1">6.1 Detailed Budget Breakdown</a></li>
+    <li class="toc-chapter"><a href="#sec7">7. Scholarships &amp; Funding</a></li>
+    <li class="toc-chapter"><a href="#sec8">8. Placements &amp; Career Outcomes</a></li>
+    <li><a href="#sec8-1">8.1 Salary Data &amp; Top Employers</a></li>
+    <li class="toc-chapter"><a href="#sec9">9. Campus Life for Indians</a></li>
+    <li><a href="#sec9-1">9.1 Accommodation, Food &amp; Community</a></li>
+    <li class="toc-chapter"><a href="#sec10">10. Application Checklist</a></li>
+    <li class="toc-chapter"><a href="#sec11">11. Student Quotes</a></li>
+  </ul>
+</div>
+
+<!-- ==================== SECTION 1 ==================== -->
+<h1 id="sec1">1. Purdue at a Glance</h1>
+
+<div class="stats-row">
+  <div class="stat-pill">
+    <div class="stat-num">#99</div>
+    <div class="stat-label">QS World Ranking</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">#51</div>
+    <div class="stat-label">US News Ranking</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">1869</div>
+    <div class="stat-label">Founded</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">50,000+</div>
+    <div class="stat-label">Total Students</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">2,500+</div>
+    <div class="stat-label">Indian Students</div>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Attribute</th><th>Details</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Full Name</strong></td><td>Purdue University</td></tr>
+    <tr><td><strong>Location</strong></td><td>West Lafayette, Indiana, USA</td></tr>
+    <tr><td><strong>Type</strong></td><td>Public Research University</td></tr>
+    <tr><td><strong>Acceptance Rate</strong></td><td>53%</td></tr>
+    <tr><td><strong>Student-Faculty Ratio</strong></td><td>13:1</td></tr>
+    <tr><td><strong>Graduation Rate</strong></td><td>83%</td></tr>
+    <tr><td><strong>International Students</strong></td><td>22% of total enrollment</td></tr>
+    <tr><td><strong>Gender Ratio</strong></td><td>44:56 (Female:Male)</td></tr>
+    <tr><td><strong>Website</strong></td><td>purdue.edu</td></tr>
+    <tr><td><strong>Nickname</strong></td><td>"Cradle of Astronauts"</td></tr>
+  </tbody>
+</table>
+
+<div class="info-box">
+  <div class="info-box-title">Famous Alumni</div>
+  <strong>Neil Armstrong</strong> — First man on the moon (MS from Purdue)<br>
+  <strong>Sundar Pichai</strong> — CEO of Google (worked at Purdue)
+</div>
+
+<!-- ==================== SECTION 2 ==================== -->
+<h1 id="sec2">2. Why Choose Purdue?</h1>
+
+<ul>
+  <li><strong>Top 10 Engineering School</strong> in the US at public university price</li>
+  <li><strong>More astronauts than any other university</strong> — NASA's favorite recruitment ground</li>
+  <li><strong>2,500+ Indian students</strong> with a strong, tight-knit STEM community</li>
+  <li><strong>Affordable tuition</strong> for the quality offered — best ROI among top engineering schools</li>
+  <li><strong>World's largest academic propulsion lab</strong> — Zucrow Labs</li>
+  <li><strong>Strong industry recruiting</strong> from Boeing, Lockheed Martin, SpaceX, Amazon, and more</li>
+  <li><strong>Safe, affordable college town</strong> — West Lafayette is built around students</li>
+  <li><strong>91% placement rate</strong> within 6 months of graduation</li>
+</ul>
+
+<div class="tip-box">
+  <div class="info-box-title">Insider Tip</div>
+  Purdue is known as the "Poor Man's MIT" — offering comparable engineering quality at a fraction of the cost. If you're an Indian student with a strong STEM background and a tight budget, Purdue should be at the top of your list.
+</div>
+
+<!-- ==================== SECTION 3 ==================== -->
+<h1 id="sec3">3. Programs &amp; Courses</h1>
+
+<h2 id="sec3-1">3.1 Popular Master's Programs for Indian Students</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Program</th>
+      <th>Duration</th>
+      <th>Tuition/Year</th>
+      <th>Key Highlights</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>MS Aerospace Engineering</strong></td>
+      <td>2 Years</td>
+      <td>$18K-22K</td>
+      <td>World's #1 aerospace program. Wind tunnel and propulsion labs. NASA-funded research.</td>
+    </tr>
+    <tr>
+      <td><strong>MS Computer Science</strong></td>
+      <td>2 Years</td>
+      <td>$18K-22K</td>
+      <td>Strong in systems, AI, and software engineering. Top recruiters: Amazon, Google, Microsoft.</td>
+    </tr>
+    <tr>
+      <td><strong>MS Mechanical Engineering</strong></td>
+      <td>2 Years</td>
+      <td>$18K-22K</td>
+      <td>Automotive, robotics, and thermal systems. Strong industry connections.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Program Requirements</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Requirement</th>
+      <th>MS Aerospace</th>
+      <th>MS CS</th>
+      <th>MS Mechanical</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Bachelor's Degree</strong></td>
+      <td>Aero/Mech (70%+)</td>
+      <td>CS (70%+)</td>
+      <td>Mechanical (70%+)</td>
+    </tr>
+    <tr>
+      <td><strong>GRE Score</strong></td>
+      <td>315+</td>
+      <td>310+</td>
+      <td>305+</td>
+    </tr>
+    <tr>
+      <td><strong>IELTS</strong></td>
+      <td>6.5+</td>
+      <td>6.5+</td>
+      <td>6.5+</td>
+    </tr>
+    <tr>
+      <td><strong>Work Experience</strong></td>
+      <td>Not required</td>
+      <td>Not required</td>
+      <td>Not required</td>
+    </tr>
+    <tr>
+      <td><strong>Intakes</strong></td>
+      <td>Fall, Spring</td>
+      <td>Fall, Spring</td>
+      <td>Fall, Spring</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Other Available Programs</h3>
+<p>Purdue also offers strong programs in Electrical &amp; Computer Engineering, Civil Engineering, Industrial Engineering, Data Science, Business Analytics, and an MBA through the Krannert School of Management. Check the official Purdue Graduate School website for the complete program directory.</p>
+
+<!-- ==================== SECTION 4 ==================== -->
+<h1 id="sec4">4. Eligibility &amp; Requirements</h1>
+
+<h2 id="sec4-1">4.1 Admission Requirements</h2>
+
+<table>
+  <thead>
+    <tr><th>Requirement</th><th>Minimum</th><th>Competitive</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>GPA (10-point scale)</strong></td><td>7.0+</td><td>8.0+</td></tr>
+    <tr><td><strong>GRE</strong></td><td>305+</td><td>315+ (Aero: 320+)</td></tr>
+    <tr><td><strong>IELTS</strong></td><td>6.5 overall</td><td>7.0+</td></tr>
+    <tr><td><strong>TOEFL iBT</strong></td><td>80+</td><td>100+</td></tr>
+    <tr><td><strong>Work Experience</strong></td><td colspan="2">Not required for MS programs</td></tr>
+    <tr><td><strong>LORs</strong></td><td colspan="2">3 Letters of Recommendation</td></tr>
+    <tr><td><strong>SOP</strong></td><td colspan="2">Required</td></tr>
+    <tr><td><strong>Resume/CV</strong></td><td colspan="2">Required</td></tr>
+    <tr><td><strong>Interview</strong></td><td colspan="2">Not required</td></tr>
+    <tr><td><strong>Application Fee</strong></td><td colspan="2">$75 (approx Rs 6,250)</td></tr>
+  </tbody>
+</table>
+
+<h3>Standardized Test Details</h3>
+
+<p><strong>GRE:</strong> Verbal (130-170) + Quantitative (130-170) + AWA (0-6). Total 305+ recommended. 315+ makes you competitive. For Aerospace Engineering, aim for 320+. GRE is valid for 5 years. Fee: $220 (approx Rs 18,500).</p>
+
+<p><strong>IELTS:</strong> Listening, Reading, Writing, Speaking — each scored 0-9. Overall 6.5 minimum, 7.0+ recommended. Valid for 2 years. Fee: Rs 16,250.</p>
+
+<h3>Required Documents</h3>
+<ul class="checklist">
+  <li>10th &amp; 12th Mark Sheets and Certificates</li>
+  <li>Bachelor's Degree Certificate</li>
+  <li>All Semester Mark Sheets / Transcript</li>
+  <li>GRE Score Card</li>
+  <li>IELTS / TOEFL Score Card</li>
+  <li>Passport (valid for 6+ months)</li>
+  <li>Statement of Purpose (SOP)</li>
+  <li>3 Letters of Recommendation (LOR)</li>
+  <li>Resume / CV</li>
+  <li>Financial Proof ($45,000+ in bank)</li>
+  <li>Application Fee Receipt ($75)</li>
+  <li>Backlog Certificate (if applicable)</li>
+</ul>
+
+<div class="warning-box">
+  <strong>Important:</strong> Purdue requires proof of funds showing at least $45,000 (approx Rs 37.5 Lakhs) for the first year. This can be a bank statement, education loan sanction letter, or sponsor letter.
+</div>
+
+<!-- ==================== SECTION 5 ==================== -->
+<h1 id="sec5">5. Application Deadlines</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Intake</th>
+      <th>Application Deadline</th>
+      <th>Decision Date</th>
+      <th>Classes Begin</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Fall (Primary)</strong></td>
+      <td>January 1</td>
+      <td>March 15</td>
+      <td>August</td>
+    </tr>
+    <tr>
+      <td><strong>Spring</strong></td>
+      <td>September 1</td>
+      <td>October 15</td>
+      <td>January</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tip-box">
+  <div class="info-box-title">Pro Tip</div>
+  <strong>Apply for Fall intake.</strong> Fall is the primary intake with more seats, more funding opportunities, and better assistantship chances. Spring intake has limited seats and fewer scholarship options. Submit your application by <strong>December 1</strong> to be safe — don't wait until the January 1 deadline.
+</div>
+
+<h3>Application Process</h3>
+<ol>
+  <li>Create an account on the <strong>Purdue Graduate School Application Portal</strong></li>
+  <li>Select your program (Aerospace, CS, Mechanical, etc.)</li>
+  <li>Fill in personal and academic details</li>
+  <li>Upload all required documents (transcripts, SOP, LORs, resume)</li>
+  <li>Report GRE and IELTS scores (use Purdue's institution code: <strong>1631</strong>)</li>
+  <li>Pay the $75 application fee</li>
+  <li>Submit and track your application status online</li>
+</ol>
+
+<!-- ==================== SECTION 6 ==================== -->
+<h1 id="sec6">6. Tuition &amp; Cost of Living</h1>
+
+<h2 id="sec6-1">6.1 Detailed Budget Breakdown (Per Year)</h2>
+
+<table>
+  <thead>
+    <tr><th>Expense Category</th><th>Cost (USD)</th><th>Cost (INR approx.)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Tuition (MS)</strong></td><td>$18,000 - 22,000</td><td>Rs 15 - 18.5 Lakhs</td></tr>
+    <tr><td><strong>Accommodation</strong></td><td>$7,000 - 12,000</td><td>Rs 5.8 - 10 Lakhs</td></tr>
+    <tr><td><strong>Food</strong></td><td>$3,000 - 5,000</td><td>Rs 2.5 - 4.2 Lakhs</td></tr>
+    <tr><td><strong>Transport</strong></td><td>$1,000</td><td>Rs 83,000</td></tr>
+    <tr><td><strong>Health Insurance</strong></td><td>$2,500</td><td>Rs 2.1 Lakhs</td></tr>
+    <tr><td><strong>Personal / Books</strong></td><td>$2,500 - 4,000</td><td>Rs 2.1 - 3.3 Lakhs</td></tr>
+    <tr style="background: #fef2f2; font-weight: 700;">
+      <td><strong>TOTAL PER YEAR</strong></td>
+      <td><strong>$34,000 - 46,500</strong></td>
+      <td><strong>Rs 28 - 39 Lakhs</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Total 2-Year MS Budget</h3>
+<table>
+  <thead>
+    <tr><th>Component</th><th>Amount (INR)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Year 1 (Tuition + Living)</td><td>Rs 28 - 39 Lakhs</td></tr>
+    <tr><td>Year 2 (Tuition + Living)</td><td>Rs 28 - 39 Lakhs</td></tr>
+    <tr><td>One-time costs (flight, visa, tests)</td><td>Rs 2 - 3 Lakhs</td></tr>
+    <tr style="background: #fef2f2; font-weight: 700;">
+      <td><strong>GRAND TOTAL (2 Years)</strong></td>
+      <td><strong>Rs 58 - 81 Lakhs</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Cost-Saving Tips</h3>
+<ul>
+  <li><strong>Graduate Assistantship:</strong> Covers full tuition + $1,500-2,500/month stipend. Apply with your admission.</li>
+  <li><strong>Part-time work:</strong> 20 hrs/week on campus. Earn $800-1,200/month.</li>
+  <li><strong>Summer internship:</strong> CPT allows paid internships. Average: $5,000-8,000/month.</li>
+  <li><strong>Shared accommodation:</strong> Sharing an apartment reduces rent by 40-50%.</li>
+  <li><strong>Cook your own food:</strong> Indian groceries available. Cooking saves $200-300/month.</li>
+</ul>
+
+<div class="info-box">
+  <div class="info-box-title">ROI Calculation (MS CS Example)</div>
+  <strong>Total Investment:</strong> Rs 70 Lakhs (2 years)<br>
+  <strong>Starting Salary:</strong> $115,000/year (Rs 95 Lakhs/year)<br>
+  <strong>Breakeven Period:</strong> ~1 year of work<br>
+  <strong>5-Year Net Gain:</strong> Rs 3-4 Crores (after taxes and expenses)
+</div>
+
+<!-- ==================== SECTION 7 ==================== -->
+<h1 id="sec7">7. Scholarships &amp; Funding</h1>
+
+<table>
+  <thead>
+    <tr>
+      <th>Scholarship</th>
+      <th>Amount</th>
+      <th>Eligibility</th>
+      <th>Deadline</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Purdue Engineering Fellowship</strong></td>
+      <td>$5,000 - 15,000/yr</td>
+      <td>Strong STEM background</td>
+      <td>Jan 1</td>
+    </tr>
+    <tr>
+      <td><strong>Graduate School Merit Award</strong></td>
+      <td>$3,000 - 10,000/yr</td>
+      <td>GPA 8.0+</td>
+      <td>Rolling</td>
+    </tr>
+    <tr>
+      <td><strong>Graduate Assistantship (TA/RA)</strong></td>
+      <td>Full tuition + $1,500-2,500/mo</td>
+      <td>Research/Teaching skills</td>
+      <td>With admission</td>
+    </tr>
+    <tr>
+      <td><strong>Fulbright-Nehru Scholarship</strong></td>
+      <td>Full funding</td>
+      <td>3+ years work experience</td>
+      <td>June-July</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tip-box">
+  <div class="info-box-title">Maximizing Your Funding</div>
+  The best way to fund your Purdue education is through a <strong>Graduate Assistantship</strong>. It covers your full tuition and gives you a monthly stipend. To improve your chances: maintain a high GPA, gain research experience, connect with professors before applying, and highlight any teaching or research experience in your SOP.
+</div>
+
+<!-- ==================== SECTION 8 ==================== -->
+<h1 id="sec8">8. Placements &amp; Career Outcomes</h1>
+
+<h2 id="sec8-1">8.1 Placement Statistics (2024 Data)</h2>
+
+<div class="stats-row">
+  <div class="stat-pill">
+    <div class="stat-num">91%</div>
+    <div class="stat-label">Placement Rate (6 months)</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">$98K</div>
+    <div class="stat-label">Average Salary</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">$190K</div>
+    <div class="stat-label">Highest Salary</div>
+  </div>
+  <div class="stat-pill">
+    <div class="stat-num">900+</div>
+    <div class="stat-label">Recruiting Companies</div>
+  </div>
+</div>
+
+<h3>Course-Wise Placement Data</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Program</th>
+      <th>Placement Rate</th>
+      <th>Avg Salary</th>
+      <th>Top Roles</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>MS Aerospace</strong></td>
+      <td>94%</td>
+      <td>$105,000</td>
+      <td>Aerospace Engineer, Propulsion Engineer, Flight Test Engineer, CFD Analyst</td>
+    </tr>
+    <tr>
+      <td><strong>MS Computer Science</strong></td>
+      <td>93%</td>
+      <td>$115,000</td>
+      <td>Software Engineer, Systems Architect, ML Engineer</td>
+    </tr>
+    <tr>
+      <td><strong>MS Mechanical</strong></td>
+      <td>88%</td>
+      <td>$92,000</td>
+      <td>Design Engineer, Manufacturing Engineer, Thermal Engineer, R&amp;D Engineer</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Top Recruiting Companies</h3>
+<p><strong>Boeing, NASA, SpaceX, Amazon, Caterpillar, Deloitte, Rolls-Royce, Lockheed Martin, General Electric, Raytheon, Google, Microsoft, Apple, Tesla, Northrop Grumman</strong></p>
+
+<h3>Post-Study Work Visa (USA)</h3>
+<table>
+  <thead>
+    <tr><th>Stage</th><th>Duration</th><th>Details</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>OPT (Standard)</strong></td><td>12 months</td><td>Work permit after graduation</td></tr>
+    <tr><td><strong>STEM OPT Extension</strong></td><td>+24 months</td><td>Available for all 3 programs (Aerospace, CS, Mechanical are STEM)</td></tr>
+    <tr><td><strong>Total Work Time</strong></td><td><strong>36 months</strong></td><td>3 full years to work and find H-1B sponsorship</td></tr>
+    <tr><td><strong>H-1B Visa</strong></td><td>3+3 years</td><td>Employer-sponsored work visa</td></tr>
+    <tr><td><strong>Green Card</strong></td><td>Permanent</td><td>Long-term pathway through employment</td></tr>
+  </tbody>
+</table>
+
+<div class="warning-box">
+  <strong>H-1B Lottery:</strong> The H-1B visa is awarded through a lottery system with roughly 25-30% selection odds. Having 3 years of OPT (STEM extension) gives you 3 attempts at the lottery, significantly improving your chances.
+</div>
+
+<!-- ==================== SECTION 9 ==================== -->
+<h1 id="sec9">9. Campus Life for Indians</h1>
+
+<h2 id="sec9-1">9.1 Living at Purdue</h2>
+
+<h3>Accommodation</h3>
+<table>
+  <thead>
+    <tr><th>Type</th><th>Cost/Month</th><th>Pros</th><th>Cons</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>On-campus Dorms</strong></td><td>$600-900</td><td>Close to classes, meal plans</td><td>Limited availability for grad students</td></tr>
+    <tr><td><strong>Off-campus Apartments</strong></td><td>$500-800</td><td>More space, cheaper with roommates</td><td>Need to arrange utilities</td></tr>
+    <tr><td><strong>Shared Houses</strong></td><td>$400-600</td><td>Cheapest option, Indian community</td><td>Farther from campus</td></tr>
+  </tbody>
+</table>
+
+<h3>Indian Food &amp; Groceries</h3>
+<p>West Lafayette has excellent Indian food options: <strong>Chaat House, Bombay Cafe, India Mahal</strong>. For groceries, <strong>Patel Brothers</strong> stocks all Indian spices, lentils, and snacks. Many Indian students cook together and share meals.</p>
+
+<h3>Indian Student Community</h3>
+<ul>
+  <li><strong>Purdue Indian Students Association (ISA)</strong> — 500+ members, organizes all major Indian festivals</li>
+  <li><strong>Bharati</strong> — Indian classical dance and music group</li>
+  <li><strong>Purdue Cricket Club</strong> — Regular matches and tournaments</li>
+  <li><strong>Hindi Cinema Club</strong> — Bollywood movie nights</li>
+</ul>
+
+<h3>Festivals Celebrated</h3>
+<p><strong>India Night, Diwali, Holi, Garba</strong> — All major Indian festivals are celebrated on campus with hundreds of attendees. India Night is the biggest event, featuring Bollywood dances, Indian food stalls, and cultural performances.</p>
+
+<h3>Weather</h3>
+<p><strong>Winter:</strong> -10°C to 5°C (Nov-Mar) — Very cold, snow common. Buy a heavy winter jacket.<br>
+<strong>Summer:</strong> 20°C to 30°C (Jun-Aug) — Warm and pleasant.<br>
+<strong>Tip:</strong> Indian students often struggle with the first winter. Invest in good winter gear before you arrive.</p>
+
+<h3>Safety</h3>
+<p>West Lafayette is a <strong>very safe college town</strong> with low crime rates. The campus is well-lit and has a 24/7 security patrol. Purdue also offers a safe ride service for late-night travel.</p>
+
+<h3>Weekend Getaways</h3>
+<ul>
+  <li><strong>Indianapolis</strong> — 1 hour drive. State capital, good shopping and dining.</li>
+  <li><strong>Chicago</strong> — 2 hours drive. Major city, Indian grocery hub, airport.</li>
+  <li><strong>Indiana Dunes National Park</strong> — 1.5 hours. Beautiful lakeside beaches.</li>
+</ul>
+
+<!-- ==================== SECTION 10 ==================== -->
+<h1 id="sec10">10. Application Checklist</h1>
+
+<h3>Before You Apply (3-6 months prior)</h3>
+<ul class="checklist">
+  <li>Take GRE and aim for 310+ (315+ for Aerospace)</li>
+  <li>Take IELTS and aim for 7.0+</li>
+  <li>Request transcripts from your university</li>
+  <li>Get 3 LORs from professors/employers</li>
+  <li>Draft your Statement of Purpose (SOP)</li>
+  <li>Prepare your Resume/CV</li>
+  <li>Arrange financial documents ($45K+ proof)</li>
+</ul>
+
+<h3>Application Steps</h3>
+<ul class="checklist">
+  <li>Visit purdue.edu/gradschool and create an account</li>
+  <li>Select your program (Aerospace / CS / Mechanical)</li>
+  <li>Fill in all personal and academic details</li>
+  <li>Upload transcripts, SOP, LORs, and resume</li>
+  <li>Send GRE scores (code: 1631) and IELTS scores</li>
+  <li>Pay $75 application fee</li>
+  <li>Submit application before January 1 (Fall) or September 1 (Spring)</li>
+  <li>Track application status online</li>
+</ul>
+
+<h3>After Acceptance</h3>
+<ul class="checklist">
+  <li>Accept offer and pay enrollment deposit</li>
+  <li>Apply for I-20 (Certificate of Eligibility)</li>
+  <li>Pay SEVIS fee ($350)</li>
+  <li>Schedule F-1 visa interview at US Embassy</li>
+  <li>Prepare visa documents (I-20, financial proof, SOP)</li>
+  <li>Attend visa interview</li>
+  <li>Book flight tickets</li>
+  <li>Arrange temporary accommodation</li>
+  <li>Attend Purdue orientation (mandatory)</li>
+</ul>
+
+<div class="warning-box">
+  <strong>Visa Wait Times:</strong> US visa interview appointments in India can have wait times of 3-6 months. Book your appointment as soon as you receive your I-20. Do not delay.
+</div>
+
+<!-- ==================== SECTION 11 ==================== -->
+<h1 id="sec11">11. What Purdue Students Say</h1>
+
+<div class="quote-block">
+  "I touched a rocket engine in my first semester. Where else does that happen? The hands-on experience here is unreal. I got placed at Boeing within 3 months of graduating."
+  <div class="quote-author">— Akash, MS Aerospace Engineering '24</div>
+</div>
+
+<div class="quote-block">
+  "Purdue football games are electric. 50,000 people chanting 'Boiler Up!' — gives you goosebumps every time. The Indian community here is like family."
+  <div class="quote-author">— Riya, MS Mechanical Engineering '25</div>
+</div>
+
+<div class="quote-block">
+  "The engineering community here is like a family. Everyone helps everyone. No cutthroat competition. My professors actually know my name and care about my progress."
+  <div class="quote-author">— Varun, MS Computer Science '24</div>
+</div>
+
+<div class="info-box">
+  <div class="info-box-title">Ready to Apply to Purdue?</div>
+  Let Kohortconnect help you craft a winning application. Our verified consultants specialize in Purdue admissions and can help with SOP writing, LOR guidance, and interview preparation.
+  <br><br>
+  <strong>Visit www.kohortconnect.com</strong> or WhatsApp us to get your personalized Purdue admission roadmap.
+</div>
+
+<!-- ==================== BACK COVER ==================== -->
+<div class="back-cover">
+  <div class="cover-grid"></div>
+  <div style="position:absolute; top:0; left:0; width:100%; height:6mm; background:linear-gradient(90deg,#ce1126,#8b0000,#ce1126);"></div>
+  <h2>Boiler Up!<br>Your Purdue Journey Starts Here</h2>
+  <p>Get expert guidance on your Purdue application — SOP review, LOR templates, visa prep, and more. Chat with us on WhatsApp.</p>
+  <div class="cta">www.kohortconnect.com</div>
+  <p class="footer-text">Free Profile Evaluation | Verified Consultants | End-to-End Support</p>
+</div>
+
+</body>
+</html>

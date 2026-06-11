@@ -13,6 +13,8 @@ FROM node:20-alpine AS production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY db ./db
+COPY api ./api
+COPY contracts ./contracts
 COPY drizzle.config.ts tsconfig.json package.json ./
 
 EXPOSE 3000

@@ -13,7 +13,8 @@ RUN npm run build
 FROM node:20-alpine AS production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY package.json ./
+COPY db ./db
+COPY drizzle.config.ts tsconfig.json package.json ./
 
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npx drizzle-kit push && npx tsx db/seed-country-data.ts && npm start"]
